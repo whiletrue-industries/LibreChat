@@ -1,0 +1,15 @@
+{
+  "schema_version": "v1",
+  "name_for_model": "budgetkey",
+  "name_for_human": "BudgetKey",
+  "description_for_model": "Retrieves data from the Budget Key site.",
+  "description_for_human": "Retrieves data from the Budget Key site.",
+  "auth": {
+    "type": "none"
+  },
+  "api": {
+    "type": "openapi",
+    "url": "budgetkey.yaml",
+    "has_user_authentication": false
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "schema_version": "v1",
+  "name_for_model": "takanon",
+  "name_for_human": "takanon",
+  "description_for_model": "Retrieves data from the Knesset Bylaws.",
+  "description_for_human": "Retrieves data from the Knesset Bylaws.",
+  "auth": {
+    "type": "none"
+  },
+  "api": {
+    "type": "openapi",
+    "url": "takanon.yaml",
+    "has_user_authentication": false
+  }
+}

@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { z } = require('zod');
 const { logger } = require('~/config');
-const { createOpenAPIPlugin } = require('~/app/clients/tools/dynamic/OpenAPIPlugin');
+const { createOpenAPIPlugin, getSpec } = require('~/app/clients/tools/dynamic/OpenAPIPlugin');
 
 // The minimum Manifest definition
 const ManifestDefinition = z.object({
@@ -37,7 +37,7 @@ function validateJson(json) {
 }
 
 // omit the LLM to return the well known jsons as objects
-async function loadSpecs({ llm, user, message, tools = [], map = false, memory, signal }) {
+async function loadSpecs({ llm, user, message, tools = [], map = false, memory, signal, jsons }) {
   const directoryPath = path.join(__dirname, '..', '.well-known');
   let files = [];
 
@@ -94,7 +94,16 @@ async function loadSpecs({ llm, user, message, tools = [], map = false, memory, 
         continue;
       }
 
-      validJsons.push(json);
+      if (!jsons) {
+        validJsons.push(json);
+      } else {
+        if (json.api.type === 'openapi') {
+          validJsons.push({
+            openapi: await getSpec(json.api.url),
+            spec: json,
+          });
+        }
+      }
     }
   }
 
@@ -102,9 +111,12 @@ async function loadSpecs({ llm, user, message, tools = [], map = false, memory, 
     return constructorMap;
   }
 
+  if (jsons) {
+    return validJsons;
+  }
+
   const plugins = (await Promise.all(validJsons)).filter((plugin) => plugin);
 
-  //   logger.debug('[validateJson] plugins', plugins);
   //   logger.debug(plugins[0].name);
 
   return plugins;

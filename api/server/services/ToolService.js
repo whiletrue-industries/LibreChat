@@ -16,6 +16,7 @@ const { processFileURL, uploadImageBuffer } = require('~/server/services/Files/p
 const { loadActionSets, createActionTool, domainParser } = require('./ActionService');
 const { recordUsage } = require('~/server/services/Threads');
 const { loadTools } = require('~/app/clients/tools/util');
+const { loadSpecs } = require('~/app/clients/tools/util/loadSpecs');
 const { redactMessage } = require('~/config/parsers');
 const { sleep } = require('~/server/utils');
 const { logger } = require('~/config');
@@ -193,6 +194,10 @@ async function processRequiredActions(client, requiredActions) {
     },
     skipSpecs: true,
   });
+  const loadedSpecs = await loadSpecs({
+    tools: ['budgetkey', 'takanon'],
+    jsons: true,
+  });
 
   const ToolMap = loadedTools.reduce((map, tool) => {
     map[tool.name] = tool;
@@ -294,12 +299,27 @@ async function processRequiredActions(client, requiredActions) {
             assistant_id: client.req.body.assistant_id,
           })) ?? [];
       }
+      if (!actionSets.length) {
+        actionSets = loadedSpecs.map((spec) => {
+          return {
+            action_id: spec.spec.name_for_model,
+            type: 'function',
+            metadata: {
+              domain: '',
+              raw_spec: JSON.stringify(spec.openapi),
+            },
+          };
+        });
+      }
 
       let actionSet = null;
       let currentDomain = '';
       for (let action of actionSets) {
-        const domain = await domainParser(client.req, action.metadata.domain, true);
-        if (currentAction.tool.includes(domain)) {
+        const domain = (await domainParser(client.req, action.metadata.domain, true)) ?? 'func';
+        if (
+          currentAction.tool.includes(domain) ||
+          action.metadata.raw_spec.indexOf(`"operationId":"${currentAction.tool}"`) >= 0
+        ) {
           currentDomain = domain;
           actionSet = action;
           break;
