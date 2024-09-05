@@ -1,6 +1,8 @@
 import React from 'react';
 import { Clock4 } from 'lucide-react';
 import { cn } from '~/utils';
+import { useRecoilValue } from 'recoil';
+import store from '~/store';
 
 export interface MentionItemProps {
   name: string;
@@ -21,6 +23,9 @@ export default function MentionItem({
   description,
   type = 'mention',
 }: MentionItemProps) {
+  const chatDirection = useRecoilValue(store.chatDirection).toLowerCase();
+  const isRTL = chatDirection === 'rtl';
+
   return (
     <button tabIndex={index} onClick={onClick} id={`${type}-item-${index}`} className="w-full">
       <div
@@ -34,12 +39,17 @@ export default function MentionItem({
           <div className="truncate">
             <span className="font-medium">{name}</span>
             {description ? (
-              <span className="text-token-text-tertiary ml-2 text-sm font-light">
+              <span
+                className={cn(
+                  'text-token-text-tertiary text-sm font-light',
+                  isRTL ? 'mr-2' : 'ml-2',
+                )}
+              >
                 {description}
               </span>
             ) : null}
           </div>
-          <Clock4 size={16} className="ml-2 flex-shrink-0" />
+          <Clock4 size={16} className={cn('flex-shrink-0', isRTL ? 'mr-2' : 'ml-2')} />
         </div>
       </div>
     </button>

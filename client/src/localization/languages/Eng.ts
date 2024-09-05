@@ -216,7 +216,7 @@ export default {
   com_ui_fork_branches: 'Include related branches',
   com_ui_fork_visible: 'Visible messages only',
   com_ui_fork_from_message: 'Select a fork option',
-  com_ui_mention: 'Mention an endpoint, assistant, or preset to quickly switch to it',
+  com_ui_mention: 'בחרו בוט עמו תרצו לשוחח',
   com_ui_add: 'Add a model or preset for an additional response',
   com_ui_regenerate: 'Regenerate',
   com_ui_continue: 'Continue',
@@ -545,7 +545,7 @@ export default {
   com_endpoint_skip_hover:
     'Enable skipping the completion step, which reviews the final answer and generated steps',
   com_endpoint_config_key: 'Set API Key',
-  com_endpoint_assistant_placeholder: 'Please select an Assistant from the right-hand Side Panel',
+  com_endpoint_assistant_placeholder: 'בחרו בוט לשוחח עמו בתפריט הימני למעלה',
   com_endpoint_config_placeholder: 'Set your Key in the Header menu to chat.',
   com_endpoint_config_key_for: 'Set API Key for',
   com_endpoint_config_key_name: 'Key',

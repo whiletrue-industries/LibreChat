@@ -602,34 +602,35 @@ async function processMessages({ openai, client, messages = [] }) {
             });
             replacementText = file.filepath;
           } else if (type === AnnotationTypes.FILE_CITATION && file_id) {
-            file = await retrieveAndProcessFile({
-              openai,
-              client,
-              file_id,
-              unknownType: true,
-            });
-            if (file && file.filename) {
-              if (!sources.has(file.filename)) {
-                sources.set(file.filename, sources.size + 1);
-              }
-              replacementText = `${uniqueCitationStart}${sources.get(
-                file.filename,
-              )}${uniqueCitationEnd}`;
-            }
+            // file = await retrieveAndProcessFile({
+            //   openai,
+            //   client,
+            //   file_id,
+            //   unknownType: true,
+            // });
+            // if (file && file.filename) {
+            //   if (!sources.has(file.filename)) {
+            //     sources.set(file.filename, sources.size + 1);
+            //   }
+            //   replacementText = `${uniqueCitationStart}${sources.get(
+            //     file.filename,
+            //   )}${uniqueCitationEnd}`;
+            // }
+            replacementText = '';
           }
 
-          if (file && replacementText) {
-            replacements.push({
-              start: annotation.start_index,
-              end: annotation.end_index,
-              text: replacementText,
-            });
-            edited = true;
-            if (!alreadyProcessed) {
-              client.processedFileIds.add(file_id);
-              message.files.push(file);
-            }
-          }
+          // if (file && replacementText) {
+          replacements.push({
+            start: annotation.start_index,
+            end: annotation.end_index,
+            text: replacementText,
+          });
+          edited = true;
+          // if (!alreadyProcessed) {
+          //   client.processedFileIds.add(file_id);
+          //   message.files.push(file);
+          // }
+          // }
         } catch (error) {
           console.error(`Failed to process annotation: ${error.message}`);
         }

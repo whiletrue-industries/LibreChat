@@ -2288,3 +2288,7 @@ button.scroll-convo {
   outline: 2px solid #fff;
   outline-offset: 2px;
 }
+
+.rtl {
+  direction: rtl !important;
+}

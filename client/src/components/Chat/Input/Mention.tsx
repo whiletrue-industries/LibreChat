@@ -1,13 +1,14 @@
 import { useState, useRef, useEffect } from 'react';
 import { EModelEndpoint } from 'librechat-data-provider';
-import type { SetterOrUpdater } from 'recoil';
+import { useRecoilValue, type SetterOrUpdater } from 'recoil';
 import type { MentionOption, ConvoGenerator } from '~/common';
 import useSelectMention from '~/hooks/Input/useSelectMention';
 import { useAssistantsMapContext } from '~/Providers';
 import useMentions from '~/hooks/Input/useMentions';
 import { useLocalize, useCombobox } from '~/hooks';
-import { removeCharIfLast } from '~/utils';
+import { cn, removeCharIfLast } from '~/utils';
 import MentionItem from './MentionItem';
+import store from '~/store';
 
 export default function Mention({
   setShowMentionPopover,
@@ -109,9 +110,17 @@ export default function Mention({
     currentActiveItem?.scrollIntoView({ behavior: 'instant', block: 'nearest' });
   }, [type, activeIndex]);
 
+  const chatDirection = useRecoilValue(store.chatDirection).toLowerCase();
+  const isRTL = chatDirection === 'rtl';
+
   return (
     <div className="absolute bottom-16 z-10 w-full space-y-2">
-      <div className="popover border-token-border-light rounded-2xl border bg-white p-2 shadow-lg dark:bg-gray-700">
+      <div
+        className={cn(
+          'popover border-token-border-light rounded-2xl border bg-white p-2 shadow-lg dark:bg-gray-700',
+          isRTL ? 'rtl' : '',
+        )}
+      >
         <input
           // The user expects focus to transition to the input field when the popover is opened
           // eslint-disable-next-line jsx-a11y/no-autofocus
