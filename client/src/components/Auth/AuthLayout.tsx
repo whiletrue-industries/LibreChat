@@ -57,7 +57,7 @@ function AuthLayout({
   return (
     <div className="relative flex min-h-screen flex-col bg-white dark:bg-gray-900">
       <BlinkAnimation active={isFetching}>
-        <div className="mt-12 h-24 w-full bg-cover">
+        <div className="mt-12 h-64 w-full bg-cover">
           <img src="/assets/logo.svg" className="h-full w-full object-contain" alt="Logo" />
         </div>
       </BlinkAnimation>
@@ -69,12 +69,22 @@ function AuthLayout({
       <div className="flex flex-grow items-center justify-center">
         <div className="w-authPageWidth overflow-hidden bg-white px-6 py-4 dark:bg-gray-900 sm:max-w-md sm:rounded-lg">
           {!startupConfigError && !isFetching && (
-            <h1
-              className="mb-4 text-center text-3xl font-semibold text-black dark:text-white"
-              style={{ userSelect: 'none' }}
-            >
-              {header}
-            </h1>
+            <div className="rtl">
+              <h1
+                className="mb-4 text-center text-3xl font-semibold text-black dark:text-white"
+                style={{ userSelect: 'none' }}
+              >
+                ברוכים הבאים
+              </h1>
+              <h2>
+                במערכת זו תוכלו לגשת ל<b>בוט נתוני התקציב</b>, אשר ינסה לענות על שאלות בנושאי תקציב,
+                תמיכות, רכש, ו<b>ובוט תקנון הכנסת</b>, אשר יענה על שאלות מתוך תקנון הכנסת ומגוון
+                חוקים רלוונטיים.
+                <br />
+                <br />
+                הזינו שם משתמש וסיסמה לגישה לבוטים:
+              </h2>
+            </div>
           )}
           {children}
           {(pathname.includes('login') || pathname.includes('register')) && (
