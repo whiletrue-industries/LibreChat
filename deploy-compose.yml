@@ -197,6 +197,7 @@ services:
   #     retries: 120
 
   botnim_api:
+    container_name: botnim_api
     image: ghcr.io/whiletrue-industries/botnim/botnim-api:latest
     restart: always
 
