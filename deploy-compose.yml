@@ -200,6 +200,8 @@ services:
     container_name: botnim_api
     image: ghcr.io/whiletrue-industries/botnim/botnim-api:latest
     restart: always
+    env_file:
+      - .env
 
 
 volumes:
