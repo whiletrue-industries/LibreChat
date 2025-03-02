@@ -140,6 +140,9 @@ services:
     depends_on:
       setup:
         condition: service_healthy
+    ports:
+      - 9200:9200
+      - 9300:9300
     volumes:
       - ./certs:/usr/share/elasticsearch/config/certs
       - ./esdata:/usr/share/elasticsearch/data
