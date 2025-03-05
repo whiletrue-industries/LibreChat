@@ -195,7 +195,7 @@ async function processRequiredActions(client, requiredActions) {
     skipSpecs: true,
   });
   const loadedSpecs = await loadSpecs({
-    tools: ['budgetkey', 'takanon'],
+    tools: ['budgetkey', 'takanon', 'botnim'],
     jsons: true,
   });
 

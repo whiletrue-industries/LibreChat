@@ -209,5 +209,11 @@
     "pluginKey": "takanon",
     "description": "Retrieves data from the Knesset Takanon.",
     "authConfig": []
+  },
+  {
+    "name": "Botnim",
+    "pluginKey": "botnim",
+    "description": "Retrieves data from botnim data",
+    "authConfig": []
   }
 ]
