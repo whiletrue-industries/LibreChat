@@ -24,6 +24,16 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "description": "The environment to search in",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "default": "staging"
+            }
           }
         ],
         "deprecated": false      
