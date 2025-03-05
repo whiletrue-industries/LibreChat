@@ -11,7 +11,7 @@
     }
   ],
   "paths": {
-    "/botnim/retrieve/budgetkey/common_knowledge": {
+    "/botnim/retrieve/budgetkey/common_knowledge__dev": {
       "get": {
         "description": "Full text search on the budgetkey common knowledge",
         "operationId": "search_budgetkey__common_knowledge__dev",
@@ -23,16 +23,6 @@
             "required": true,
             "schema": {
               "type": "string"
-            }
-          },
-          {
-            "name": "environment",
-            "in": "query",
-            "description": "The environment to search in",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "default": "staging"
             }
           }
         ],
