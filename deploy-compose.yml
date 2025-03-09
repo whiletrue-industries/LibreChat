@@ -30,7 +30,7 @@ services:
         target: /app/librechat.yaml
       - ./images:/app/client/public/images
       - ./logs:/app/api/logs
-      - ./serviceAccountKey.json:/app/serviceAccountKey.json
+      - ./serviceAccountKey.json:/app/config/serviceAccountKey.json
 
   client:
     image: nginx:1.27.0-alpine
