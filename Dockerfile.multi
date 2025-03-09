@@ -42,5 +42,5 @@ WORKDIR /app/api
 RUN npm prune --production
 EXPOSE 3080
 ENV HOST=0.0.0.0
-ENTRYPOINT [ "entrypoint.sh" ]
+ENTRYPOINT [ "/app/entrypoint.sh" ]
 CMD ["node", "server/index.js"]
