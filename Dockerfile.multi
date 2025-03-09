@@ -36,6 +36,7 @@ WORKDIR /app
 COPY api ./api
 COPY config ./config
 COPY entrypoint.sh ./
+COPY user_stats.sh /etc/periodic/15min/user-stats.sh
 COPY --from=data-provider-build /app/packages/data-provider/dist ./packages/data-provider/dist
 COPY --from=client-build /app/client/dist ./client/dist
 WORKDIR /app/api
