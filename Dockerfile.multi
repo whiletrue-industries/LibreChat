@@ -35,10 +35,12 @@ FROM base AS api-build
 WORKDIR /app
 COPY api ./api
 COPY config ./config
+COPY entrypoint.sh ./
 COPY --from=data-provider-build /app/packages/data-provider/dist ./packages/data-provider/dist
 COPY --from=client-build /app/client/dist ./client/dist
 WORKDIR /app/api
 RUN npm prune --production
 EXPOSE 3080
 ENV HOST=0.0.0.0
+ENTRYPOINT [ "entrypoint.sh" ]
 CMD ["node", "server/index.js"]
