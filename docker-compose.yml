@@ -28,7 +28,6 @@ services:
         target: /app/.env
       - ./images:/app/client/public/images
       - ./logs:/app/api/logs
-      - ./serviceAccountKey.json:/app/serviceAccountKey.json
   mongodb:
     container_name: chat-mongodb
     image: mongo
