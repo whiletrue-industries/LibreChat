@@ -795,7 +795,7 @@ pre {
   margin-bottom: 2em;
   margin-top: 2em;
   table-layout: auto;
-  text-align: left;
+  text-align: right;
   width: 100%;
 }
 .prose :where(thead):not(:where([class~='not-prose'] *)) {
