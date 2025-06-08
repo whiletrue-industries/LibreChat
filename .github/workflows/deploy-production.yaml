@@ -1,0 +1,46 @@
+# This is a basic workflow to help you get started with Actions
+
+name: Deploy Production
+
+# Controls when the action will run. 
+on:
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+jobs:
+  # This workflow contains a single job called "build"
+  build:
+    # The type of runner that the job will run on
+    runs-on: ubuntu-latest
+
+    # Steps represent a sequence of tasks that will be executed as part of the job
+    steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - uses: actions/checkout@v3
+      - name: git identity
+        run: |
+          git config user.email "adam.kariv@gmail.com"
+          git config user.name "Adam Kariv"
+      - name: build and deploy
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_HOST: ${{ secrets.SSH_HOST_PRODUCTION }}
+        run: |
+          curl https://raw.githubusercontent.com/whiletrue-industries/rebuilding-bots/refs/heads/main/specs/openapi/botnim.yaml -o botnim.yaml
+          mkdir -p ~/.ssh
+          cat > ~/.ssh/config << EOF
+          Host botnim-production
+            HostName $SSH_HOST
+            User $SSH_USER
+            IdentityFile ~/.ssh/id_rsa
+            StrictHostKeyChecking no
+          EOF
+          echo "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          chmod 644 ~/.ssh/known_hosts
+          scp -o StrictHostKeyChecking=no botnim.yaml botnim-production:botnim.yaml
+          ssh -o StrictHostKeyChecking=no botnim-production 'bash -c "./reload.sh"'
