@@ -29,7 +29,8 @@ jobs:
           SSH_USER: ${{ secrets.SSH_USER }}
           SSH_HOST: ${{ secrets.SSH_HOST_PRODUCTION }}
         run: |
-          curl https://raw.githubusercontent.com/whiletrue-industries/rebuilding-bots/refs/heads/main/specs/openapi/botnim.yaml -o botnim.yaml
+          curl https://raw.githubusercontent.com/whiletrue-industries/rebuilding-bots/refs/heads/main/specs/openapi/botnim.yaml -o botnim_.yaml
+          cat botnim_.yaml | sed 's/staging/www/g' | sed 's/__dev//g' > botnim.yaml
           mkdir -p ~/.ssh
           cat > ~/.ssh/config << EOF
           Host botnim-production
