@@ -138,6 +138,7 @@ services:
   es01:
     image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
     container_name: es01
+    restart: always
     depends_on:
       setup:
         condition: service_healthy
