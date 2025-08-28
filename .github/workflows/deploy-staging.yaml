@@ -9,6 +9,12 @@ on:
     branches: [ main ]
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
+    inputs:
+      SOURCE_BRANCH:
+        description: 'Source branch of "rebuilding-bots" to build from'
+        required: false
+        default: 'main'
+        type: string
 
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
@@ -31,8 +37,9 @@ jobs:
           SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
           SSH_USER: ${{ secrets.SSH_USER }}
           SSH_HOST: ${{ secrets.SSH_HOST_STAGING }}
+          SOURCE_BRANCH: ${{ inputs.SOURCE_BRANCH || 'main' }}
         run: |
-          curl https://raw.githubusercontent.com/whiletrue-industries/rebuilding-bots/refs/heads/main/specs/openapi/botnim.yaml -o botnim.yaml
+          curl https://raw.githubusercontent.com/whiletrue-industries/rebuilding-bots/refs/heads/${{ env.SOURCE_BRANCH }}/specs/openapi/botnim.yaml -o botnim.yaml
           mkdir -p ~/.ssh
           cat > ~/.ssh/config << EOF
           Host botnim-staging
