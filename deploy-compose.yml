@@ -206,7 +206,7 @@ services:
     container_name: botnim_api
     depends_on:
       - es01
-    image: ghcr.io/whiletrue-industries/botnim/botnim-api:latest
+    image: ghcr.io/whiletrue-industries/botnim/botnim-api:${SOURCE_BRANCH}
     restart: always
     env_file:
       - .env
