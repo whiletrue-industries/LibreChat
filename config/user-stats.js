@@ -58,7 +58,7 @@ const serviceAccount = require('./serviceAccountKey.json');
   // Read all documents from the 'users' collection, if 'password' is set in the document print it and remove it from the document
   const usersRef = db.collection('users');
   const snapshot = await usersRef.get();
-  await snapshot.forEach(async (doc) => {
+  for (let doc of snapshot.docs) {
     if (doc.data().password) {
       console.log(`User ${doc.id} has password set: ${doc.data().password}`);
       // Remove password from document
@@ -69,7 +69,7 @@ const serviceAccount = require('./serviceAccountKey.json');
         console.error(`Error removing password from user ${doc.id}: ${error}`);
       }
     }
-  });
+  }
   silentExit(0);
 })();
 
