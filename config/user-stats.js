@@ -3,6 +3,7 @@ const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { silentExit } = require('./helpers');
 const Conversation = require('~/models/schema/convoSchema');
+const { requestPasswordReset, resetPassword } = require('~/server/services/AuthService');
 const Message = require('~/models/schema/messageSchema');
 const User = require('~/models/User');
 const connect = require('./connect');
@@ -53,6 +54,17 @@ const serviceAccount = require('./serviceAccountKey.json');
   });
   console.log('Document written with ID: ', ret);
 
+  // Read all documents from the 'users' collection, if 'password' is set in the document print it and remove it from the document
+  const usersRef = db.collection('users');
+  const snapshot = await usersRef.get();
+  snapshot.forEach((doc) => {
+    if (doc.data().password) {
+      console.log(`User ${doc.id} has password set: ${doc.data().password}`);
+      // Remove password from document
+      usersRef.doc(doc.id).update({ password: admin.firestore.FieldValue.delete() });
+      console.log(`Removed password from user ${doc.id}`);
+    }
+  });
   silentExit(0);
 })();
 
