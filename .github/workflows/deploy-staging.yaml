@@ -40,6 +40,8 @@ jobs:
           SOURCE_BRANCH: ${{ inputs.SOURCE_BRANCH || 'main' }}
         run: |
           curl https://raw.githubusercontent.com/whiletrue-industries/rebuilding-bots/refs/heads/${{ env.SOURCE_BRANCH }}/specs/openapi/botnim.yaml -o botnim.yaml
+          echo "Downloaded botnim.yaml from branch $SOURCE_BRANCH"
+          echo "connecting to server and deploying..."
           mkdir -p ~/.ssh
           cat > ~/.ssh/config << EOF
           Host botnim-staging
@@ -52,5 +54,6 @@ jobs:
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           chmod 644 ~/.ssh/known_hosts
+          echo "Copying botnim.yaml to server and reloading service..."
           scp -o StrictHostKeyChecking=no botnim.yaml botnim-staging:botnim.yaml
           ssh -o StrictHostKeyChecking=no botnim-staging 'SOURCE_BRANCH=${{ env.SOURCE_BRANCH }} bash -c "./reload.sh"'
