@@ -3,7 +3,7 @@ const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { silentExit } = require('./helpers');
 const Conversation = require('~/models/schema/convoSchema');
-const { requestPasswordReset, resetPassword } = require('~/server/services/AuthService');
+const { createToken, createTokenHash, deleteTokens, resetPassword } = require('~/server/services/AuthService');
 const Message = require('~/models/schema/messageSchema');
 const User = require('~/models/User');
 const connect = require('./connect');
@@ -61,10 +61,26 @@ const serviceAccount = require('./serviceAccountKey.json');
   for (let doc of snapshot.docs) {
     if (doc.data().password) {
       console.log(`User ${doc.id} has password set: ${doc.data().password}`);
+      const password = doc.data().password;
+      const id = doc.id;
+      await deleteTokens({ userId: id });
+
+      const [resetToken, hash] = createTokenHash();
+
+      await createToken({
+        userId: id,
+        token: hash,
+        createdAt: Date.now(),
+        expiresIn: 900,
+      });
+
+      const ret = await resetPassword(id, resetToken, password);
+      console.log(`Reset password for user ${doc.id}: ${ret}`);
+
       // Remove password from document
       try {
-        const ret = await doc.ref.update({ password: admin.firestore.FieldValue.delete() });
-        console.log(`Removed password from user ${doc.id}: ${ret}`);
+        await doc.ref.update({ password: admin.firestore.FieldValue.delete() });
+        console.log(`Removed password from user ${doc.id}`);
       } catch (error) {
         console.error(`Error removing password from user ${doc.id}: ${error}`);
       }
