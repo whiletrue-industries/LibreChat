@@ -19,12 +19,13 @@ const serviceAccount = require('./serviceAccountKey.json');
     let user = {
       name: user_.name,
       email: user_.email,
+      id: user_._id,
       conversations: [],
     };
-    console.log('user: ', user);
+    console.log('user: ', user.id, user.email);
     let conversations = user.conversations;
-    for (const convo of (await Conversation.find({ user: user_._id }))) {
-      console.log('  convo: ', user);
+    for (const convo of (await Conversation.find({ user: user.id }))) {
+      // console.log('  convo: ', user);
       let conversationMessages = await Message.find({ conversationId: convo.conversationId }).sort({ createdAt: 1 });
       let messageTimestamps = conversationMessages.map((message) => message.createdAt);
       let conversation = {
@@ -57,11 +58,11 @@ const serviceAccount = require('./serviceAccountKey.json');
   // Read all documents from the 'users' collection, if 'password' is set in the document print it and remove it from the document
   const usersRef = db.collection('users');
   const snapshot = await usersRef.get();
-  snapshot.forEach((doc) => {
+  snapshot.forEach(async (doc) => {
     if (doc.data().password) {
       console.log(`User ${doc.id} has password set: ${doc.data().password}`);
       // Remove password from document
-      usersRef.doc(doc.id).update({ password: admin.firestore.FieldValue.delete() });
+      await usersRef.doc(doc.id).update({ password: admin.firestore.FieldValue.delete() });
       console.log(`Removed password from user ${doc.id}`);
     }
   });
