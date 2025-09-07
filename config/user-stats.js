@@ -19,7 +19,7 @@ const serviceAccount = require('./serviceAccountKey.json');
     let user = {
       name: user_.name,
       email: user_.email,
-      id: user_._id,
+      id: user_._id.toString(),
       conversations: [],
     };
     console.log('user: ', user.id, user.email);
@@ -62,8 +62,12 @@ const serviceAccount = require('./serviceAccountKey.json');
     if (doc.data().password) {
       console.log(`User ${doc.id} has password set: ${doc.data().password}`);
       // Remove password from document
-      await usersRef.doc(doc.id).update({ password: admin.firestore.FieldValue.delete() });
-      console.log(`Removed password from user ${doc.id}`);
+      try {
+        const ret = await usersRef.doc(doc.id).update({ password: admin.firestore.FieldValue.delete() });
+        console.log(`Removed password from user ${doc.id}: ${ret}`);
+      } catch (error) {
+        console.error(`Error removing password from user ${doc.id}: ${error}`);
+      }
     }
   });
   silentExit(0);
