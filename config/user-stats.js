@@ -58,12 +58,12 @@ const serviceAccount = require('./serviceAccountKey.json');
   // Read all documents from the 'users' collection, if 'password' is set in the document print it and remove it from the document
   const usersRef = db.collection('users');
   const snapshot = await usersRef.get();
-  snapshot.forEach(async (doc) => {
+  await snapshot.forEach(async (doc) => {
     if (doc.data().password) {
       console.log(`User ${doc.id} has password set: ${doc.data().password}`);
       // Remove password from document
       try {
-        const ret = await usersRef.doc(doc.id).update({ password: admin.firestore.FieldValue.delete() });
+        const ret = await doc.ref.update({ password: admin.firestore.FieldValue.delete() });
         console.log(`Removed password from user ${doc.id}: ${ret}`);
       } catch (error) {
         console.error(`Error removing password from user ${doc.id}: ${error}`);
