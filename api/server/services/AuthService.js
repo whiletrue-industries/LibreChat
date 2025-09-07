@@ -420,6 +420,7 @@ module.exports = {
   verifyEmail,
   registerUser,
   setAuthTokens,
+  createTokenHash,
   resetPassword,
   isDomainAllowed,
   requestPasswordReset,
