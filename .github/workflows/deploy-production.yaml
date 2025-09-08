@@ -44,4 +44,4 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           chmod 644 ~/.ssh/known_hosts
           scp -o StrictHostKeyChecking=no botnim.yaml botnim-production:botnim.yaml
-          ssh -o StrictHostKeyChecking=no botnim-production 'bash -c "./reload.sh"'
+          ssh -o StrictHostKeyChecking=no botnim-staging 'SOURCE_BRANCH=main bash -c "./reload.sh"'
