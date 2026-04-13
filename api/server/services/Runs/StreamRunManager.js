@@ -552,8 +552,42 @@ class StreamRunManager {
       };
     });
 
+    // Log each tool call before execution
+    const toolCallStart = Date.now();
+    for (const action of actions) {
+      logger.info(JSON.stringify({
+        event: 'tool_call_start',
+        run_id: action.run_id,
+        thread_id: action.thread_id,
+        tool_call_id: action.toolCallId,
+        operationId: action.tool,
+        toolInput: action.toolInput,
+        timestamp: new Date().toISOString(),
+      }));
+    }
+
     const { tool_outputs: preliminaryOutputs } = await processRequiredActions(this, actions);
     const tool_outputs = this.checkMissingOutputs(preliminaryOutputs, actions);
+
+    // Log each tool result after execution
+    const duration_ms = Date.now() - toolCallStart;
+    for (const output of tool_outputs) {
+      const matchingAction = actions.find((a) => a.toolCallId === output.tool_call_id);
+      const outputStr = typeof output.output === 'string' ? output.output : JSON.stringify(output.output);
+      const isError = outputStr.startsWith('Error') || outputStr.startsWith('API call to');
+      logger.info(JSON.stringify({
+        event: 'tool_call_end',
+        run_id: run.id,
+        thread_id: this.thread_id,
+        tool_call_id: output.tool_call_id,
+        operationId: matchingAction?.tool,
+        status: isError ? 'error' : 'success',
+        response_size: outputStr.length,
+        duration_ms,
+        timestamp: new Date().toISOString(),
+      }));
+    }
+
     /** @type {AssistantStream | undefined} */
     let toolRun;
     try {
@@ -566,8 +600,22 @@ class StreamRunManager {
         },
         this.streamOptions,
       );
+      logger.info(JSON.stringify({
+        event: 'tool_outputs_submitted',
+        run_id: run.id,
+        thread_id: this.thread_id,
+        tool_count: tool_outputs.length,
+        timestamp: new Date().toISOString(),
+      }));
     } catch (error) {
-      logger.error('Error submitting tool outputs:', error);
+      logger.error(JSON.stringify({
+        event: 'tool_outputs_submit_error',
+        run_id: run.id,
+        thread_id: this.thread_id,
+        tool_count: tool_outputs.length,
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      }));
       throw error;
     }
 

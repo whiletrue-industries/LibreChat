@@ -376,10 +376,33 @@ async function processRequiredActions(client, requiredActions) {
     };
 
     try {
+      const callStart = Date.now();
       const promise = tool
         ._call(currentAction.toolInput)
-        .then(handleToolOutput)
-        .catch(handleToolError);
+        .then((output) => {
+          logger.info(JSON.stringify({
+            event: 'tool_http_call',
+            tool_call_id: currentAction.toolCallId,
+            operationId: currentAction.tool,
+            status: 'success',
+            response_size: typeof output === 'string' ? output.length : JSON.stringify(output).length,
+            duration_ms: Date.now() - callStart,
+            timestamp: new Date().toISOString(),
+          }));
+          return handleToolOutput(output);
+        })
+        .catch((error) => {
+          logger.info(JSON.stringify({
+            event: 'tool_http_call',
+            tool_call_id: currentAction.toolCallId,
+            operationId: currentAction.tool,
+            status: 'error',
+            error: error.message?.substring(0, 200),
+            duration_ms: Date.now() - callStart,
+            timestamp: new Date().toISOString(),
+          }));
+          return handleToolError(error);
+        });
       promises.push(promise);
     } catch (error) {
       const toolOutputError = handleToolError(error);
