@@ -1,13 +1,11 @@
 ################################################################################
-# EFS filesystem for MongoDB + MeiliSearch persistent data
+# EFS filesystem for MongoDB and MeiliSearch persistent data
 #
 # One filesystem with two POSIX-isolated access points — one per sidecar.
-# The mount target security group is shared; access control is handled by
-# the access points' POSIX UIDs.
 ################################################################################
 
 module "librechat_efs" {
-  source = "git::https://github.com/Build-Up-IL/org-infra.git//modules/ecs-app-efs?ref=feat/ecs-efs-and-sidecars"
+  source = "git::https://github.com/Build-Up-IL/org-infra.git//modules/ecs-app-efs?ref=feat/ecs-efs-and-sidecars-v2"
 
   name               = "librechat"
   vpc_id             = local.contract.network.vpc_id

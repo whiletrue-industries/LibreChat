@@ -1,27 +1,25 @@
 ################################################################################
 # LibreChat ECS task
 #
-# Runs three containers in the same task definition:
-#  1. api (primary) — LibreChat Node.js app, port 3080
-#  2. mongo (sidecar) — MongoDB 7, reachable via localhost:27017, EFS-backed
+# One Fargate task with three containers:
+#  1. api (primary) — LibreChat Node.js app on :3080
+#  2. mongo (sidecar) — MongoDB 7, localhost:27017, EFS-backed
 #  3. meilisearch (sidecar) — Meili v1.7, localhost:7700, EFS-backed
 #
-# Routing: shared ALB host botnim.build-up.team with path pattern /* (catch-all
-# at priority 200; botnim-api gets priority 100 with /botnim/*). The shared ALB
-# evaluates listener rules in priority order, so /botnim/* wins before /*.
+# Routing: shared ALB host botnim.build-up.team, path pattern /* (catch-all)
+# at priority 200. botnim-api deploy owns /botnim/* at priority 100.
+#
+# Uses modules/app directly (new preferred pattern).
 ################################################################################
 
 module "librechat" {
-  source = "git::https://github.com/Build-Up-IL/org-infra.git//modules/shared-ecs-app?ref=feat/ecs-efs-and-sidecars"
+  source = "git::https://github.com/Build-Up-IL/org-infra.git//modules/app?ref=feat/ecs-efs-and-sidecars-v2"
 
-  app_name          = "librechat"
-  container_port    = 3080
-  container_name    = "api"
-  health_check_path = "/health"
+  app_name       = "librechat"
+  container_port = 3080
+  container_name = "api"
 
-  host_headers      = ["botnim.build-up.team"]
-  path_patterns     = ["/*"]
-  listener_priority = var.listener_priority
+  environment = var.environment
 
   image_tag     = var.image_tag
   desired_count = var.desired_count
@@ -32,6 +30,13 @@ module "librechat" {
 
   cpu    = 1024
   memory = 3072
+
+  public = {
+    health_check_path = "/health"
+    host_headers      = ["botnim.build-up.team"]
+    listener_priority = var.listener_priority
+    path_patterns     = ["/*"]
+  }
 
   environment_variables = {
     HOST           = "0.0.0.0"

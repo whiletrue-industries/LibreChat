@@ -1,3 +1,15 @@
+variable "region" {
+  description = "AWS region for the deployment (injected by terragrunt)."
+  type        = string
+  default     = "il-central-1"
+}
+
+variable "environment" {
+  description = "Deployment environment name (injected by terragrunt)."
+  type        = string
+  default     = "prod"
+}
+
 variable "image_tag" {
   description = "Docker image tag to deploy from the module-managed ECR repository."
   type        = string
@@ -5,7 +17,7 @@ variable "image_tag" {
 }
 
 variable "desired_count" {
-  description = "Desired ECS task count. Must stay at 0 or 1 — the task has stateful Mongo and Meili sidecars with EFS volumes that cannot be safely shared across tasks."
+  description = "Desired ECS task count. Must stay at 0 or 1 — the task has stateful Mongo and Meili sidecars with EFS volumes that cannot be shared across tasks."
   type        = number
   default     = 0
 
@@ -16,7 +28,7 @@ variable "desired_count" {
 }
 
 variable "listener_priority" {
-  description = "Unique ALB listener rule priority for /* catch-all routing on the shared botnim.build-up.team host."
+  description = "ALB listener rule priority for /* catch-all routing on the shared botnim.build-up.team host."
   type        = number
   default     = 200
 }
