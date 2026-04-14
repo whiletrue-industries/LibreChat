@@ -3,7 +3,7 @@
 ################################################################################
 
 resource "aws_s3_bucket" "mongo_backups" {
-  bucket = "librechat-mongo-backups-prod"
+  bucket = "librechat-mongo-backups-${var.environment}"
 }
 
 resource "aws_s3_bucket_public_access_block" "mongo_backups" {
@@ -45,10 +45,6 @@ resource "aws_s3_bucket_lifecycle_configuration" "mongo_backups" {
     }
   }
 }
-
-################################################################################
-# IAM policy for the task role to write backups
-################################################################################
 
 data "aws_iam_policy_document" "mongo_backups_write" {
   statement {
