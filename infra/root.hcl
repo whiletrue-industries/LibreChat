@@ -1,12 +1,17 @@
 # Terragrunt root config for LibreChat app state.
 #
-# Apps share the buildup-org-infra S3 state bucket but live under their own
+# Apps share the buildup-org-infra S3 state buckets (one per env) under a
 # project-scoped key prefix.
 
 locals {
   region             = "il-central-1"
-  state_bucket       = "buildup-org-tfstate-prod"
   project_state_name = "librechat"
+  environment        = basename(path_relative_to_include())
+  state_buckets = {
+    prod    = "buildup-org-tfstate-prod"
+    staging = "buildup-org-tfstate-staging"
+  }
+  state_bucket = local.state_buckets[local.environment]
 }
 
 remote_state {
