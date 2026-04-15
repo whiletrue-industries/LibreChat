@@ -50,15 +50,39 @@ module "librechat" {
     SEARCH         = "true"
     RAG_API_URL    = ""
     BOTNIM_API_URL = coalesce(var.botnim_api_url, "https://${local.botnim_fqdn}")
+
+    # Bootstrap admin user on first boot.
+    #
+    # The entrypoint runs `node config/create-default-user.js` when
+    # CREATE_BOOTSTRAP_USER=true. It is idempotent: if any user already
+    # exists the script exits 0 without touching Mongo. We leave this set
+    # permanently — the overhead is a single count() per cold start and
+    # it means "was this user ever created?" has a trivially-true answer.
+    #
+    # Set the password in Secrets Manager OUT OF BAND (terraform only
+    # creates the empty secret resource). For staging:
+    #   AWS_PROFILE=anubanu-staging aws secretsmanager put-secret-value \
+    #     --secret-id librechat/staging/bootstrap-user-password \
+    #     --secret-string '<strong-password>'
+    # Then trigger a new deploy (workflow_dispatch on Deploy Staging or
+    # `terragrunt apply` + `aws ecs update-service --force-new-deployment`).
+    #
+    # To create additional users after the bootstrap: either ship the
+    # OpenID/Keycloak integration (Monday task #2844301706), or flip
+    # ALLOW_REGISTRATION=true temporarily, register via /register, flip back.
+    CREATE_BOOTSTRAP_USER = "true"
+    BOOTSTRAP_USER_EMAIL  = "botnim.staging@build-up.team"
+    BOOTSTRAP_USER_NAME   = "Botnim Staging"
   }
 
   secret_environment_variables = {
-    OPENAI_API_KEY     = aws_secretsmanager_secret.openai_api_key.arn
-    JWT_SECRET         = aws_secretsmanager_secret.jwt_secret.arn
-    JWT_REFRESH_SECRET = aws_secretsmanager_secret.jwt_refresh_secret.arn
-    CREDS_KEY          = aws_secretsmanager_secret.creds_key.arn
-    CREDS_IV           = aws_secretsmanager_secret.creds_iv.arn
-    MEILI_MASTER_KEY   = aws_secretsmanager_secret.meili_master_key.arn
+    OPENAI_API_KEY          = aws_secretsmanager_secret.openai_api_key.arn
+    JWT_SECRET              = aws_secretsmanager_secret.jwt_secret.arn
+    JWT_REFRESH_SECRET      = aws_secretsmanager_secret.jwt_refresh_secret.arn
+    CREDS_KEY               = aws_secretsmanager_secret.creds_key.arn
+    CREDS_IV                = aws_secretsmanager_secret.creds_iv.arn
+    MEILI_MASTER_KEY        = aws_secretsmanager_secret.meili_master_key.arn
+    BOOTSTRAP_USER_PASSWORD = aws_secretsmanager_secret.bootstrap_user_password.arn
   }
 
   sidecar_containers = [

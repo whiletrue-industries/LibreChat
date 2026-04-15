@@ -39,3 +39,12 @@ resource "aws_secretsmanager_secret" "meili_master_key" {
   description = "MeiliSearch master key for chat history indexing"
   kms_key_id  = local.contract.ecs.kms_key_arn
 }
+
+# Bootstrap admin user password — consumed by config/create-default-user.js
+# at container startup when CREATE_BOOTSTRAP_USER=true and no user exists yet.
+# VALUE must be set out-of-band via `aws secretsmanager put-secret-value`;
+# see the comment block in main.tf for the exact command.
+resource "aws_secretsmanager_secret" "bootstrap_user_password" {
+  name        = "librechat/${var.environment}/bootstrap-user-password"
+  description = "Initial admin password seeded into LibreChat on first boot"
+}

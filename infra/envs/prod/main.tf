@@ -50,15 +50,29 @@ module "librechat" {
     SEARCH         = "true"
     RAG_API_URL    = ""
     BOTNIM_API_URL = coalesce(var.botnim_api_url, "https://${local.botnim_fqdn}")
+
+    # Bootstrap admin user on first boot. See the matching block in
+    # staging/main.tf for the full rationale — this comment is intentionally
+    # terse to avoid drift. The script is idempotent; leaving the flag on is
+    # harmless.
+    #
+    # Set the password in Secrets Manager OUT OF BAND:
+    #   AWS_PROFILE=anubanu-prod aws secretsmanager put-secret-value \
+    #     --secret-id librechat/prod/bootstrap-user-password \
+    #     --secret-string '<strong-password>'
+    CREATE_BOOTSTRAP_USER = "true"
+    BOOTSTRAP_USER_EMAIL  = "botnim.prod@build-up.team"
+    BOOTSTRAP_USER_NAME   = "Botnim Prod"
   }
 
   secret_environment_variables = {
-    OPENAI_API_KEY     = aws_secretsmanager_secret.openai_api_key.arn
-    JWT_SECRET         = aws_secretsmanager_secret.jwt_secret.arn
-    JWT_REFRESH_SECRET = aws_secretsmanager_secret.jwt_refresh_secret.arn
-    CREDS_KEY          = aws_secretsmanager_secret.creds_key.arn
-    CREDS_IV           = aws_secretsmanager_secret.creds_iv.arn
-    MEILI_MASTER_KEY   = aws_secretsmanager_secret.meili_master_key.arn
+    OPENAI_API_KEY          = aws_secretsmanager_secret.openai_api_key.arn
+    JWT_SECRET              = aws_secretsmanager_secret.jwt_secret.arn
+    JWT_REFRESH_SECRET      = aws_secretsmanager_secret.jwt_refresh_secret.arn
+    CREDS_KEY               = aws_secretsmanager_secret.creds_key.arn
+    CREDS_IV                = aws_secretsmanager_secret.creds_iv.arn
+    MEILI_MASTER_KEY        = aws_secretsmanager_secret.meili_master_key.arn
+    BOOTSTRAP_USER_PASSWORD = aws_secretsmanager_secret.bootstrap_user_password.arn
   }
 
   sidecar_containers = [
