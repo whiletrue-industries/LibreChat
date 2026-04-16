@@ -12,13 +12,14 @@ const {
   recordUsage,
   saveUserMessage,
   saveAssistantMessage,
-  buildConversationInput,
+  getOrCreateOpenAIConversation,
 } = require('~/server/services/Threads');
 const { createOnTextProgress } = require('~/server/services/AssistantService');
 const { sendMessage, isEnabled, countTokens } = require('~/server/utils');
 const { createErrorHandler } = require('~/server/controllers/assistants/errors');
 const validateAuthor = require('~/server/middleware/assistants/validateAuthor');
 const { ResponseStreamManager } = require('~/server/services/Runs');
+const { getBotConfig } = require('~/server/services/BotConfigService');
 const { addTitle } = require('~/server/services/Endpoints/assistants');
 const { getTransactions } = require('~/models/Transaction');
 const checkBalance = require('~/models/checkBalance');
@@ -36,6 +37,13 @@ const ten_minutes = 1000 * 60 * 10;
  *
  * The Assistants API chat path (threads/runs) was removed as part of the
  * Responses-API migration; the Assistants API retires 2026-08-26.
+ *
+ * Conversation context is held server-side by the OpenAI Conversations API:
+ * on the first turn we call `getOrCreateOpenAIConversation` which creates a
+ * `conv_…` and persists the mapping on the LibreChat conversation document.
+ * On every subsequent turn we pass that id as the `conversation` parameter
+ * to `responses.create` and only send the new user message as `input` —
+ * OpenAI prepends all prior items for us.
  *
  * NOTE: `openai.beta.assistants.retrieve()` is still used here to fetch the
  * model, instructions, and tool definitions configured for an assistant.
@@ -319,51 +327,53 @@ const chatV2 = async (req, res) => {
     let response;
 
     const processRun = async () => {
-      // Retrieve assistant-level config (instructions + tools) from OpenAI.
-      // Responses API has no server-side Assistant object, so we must supply
-      // these on every request. NOTE: This beta.assistants.retrieve call
-      // will be replaced by the Prompts API in a follow-up task.
-      const assistant = await openai.beta.assistants.retrieve(assistant_id);
+      // Fetch the BotConfig bundle from botnim-api. Its tool shape is
+      // already the flat Responses-API form, so we pass it straight
+      // through. This replaces the old
+      // `openai.beta.assistants.retrieve(assistant_id)` call — per the
+      // contract at rebuilding-bots/docs/LIBRECHAT_SYNC_CONTRACT.md the
+      // Assistants API has no equivalent `Prompts` REST surface, so
+      // botnim-api re-emits the config from `specs/<bot>/` on every
+      // request and LibreChat caches it briefly.
+      const botSlug = process.env.BOTNIM_BOT_SLUG ?? 'unified';
+      const botEnv = process.env.BOTNIM_ENVIRONMENT ?? 'staging';
+      const botConfig = await getBotConfig({ bot: botSlug, environment: botEnv });
 
-      // The Assistants API stores function tools as
-      //   { type: 'function', function: { name, description, parameters } }
-      // The Responses API expects the function fields flattened to the
-      // top level:
-      //   { type: 'function', name, description, parameters, strict }
-      //
-      // Non-function Assistants tools (code_interpreter, file_search,
-      // retrieval) aren't available / are shaped differently in the
-      // Responses API. For now, drop them — the bots that we care about
-      // in this migration only use function tools.
-      const responsesTools = (assistant.tools ?? [])
-        .map((tool) => {
-          if (tool?.type === 'function' && tool.function) {
-            return {
-              type: 'function',
-              name: tool.function.name,
-              description: tool.function.description,
-              parameters: tool.function.parameters,
-              strict: tool.function.strict ?? false,
-            };
-          }
-          // Drop code_interpreter/file_search/retrieval in Responses mode.
-          return null;
-        })
-        .filter(Boolean);
+      // Keep only function tools — the tool-execution loop in
+      // ResponseStreamManager only handles `function_call` output items.
+      // Other tool types (code_interpreter, file_search, …) are dropped
+      // here; if/when we add support they can be re-enabled by removing
+      // this filter.
+      const responsesTools = (botConfig.tools ?? []).filter(
+        (tool) => tool?.type === 'function',
+      );
 
       const effectiveBody = {
         ...body,
-        model: body.model ?? assistant.model,
-        instructions: body.instructions ?? assistant.instructions ?? undefined,
+        model: body.model ?? botConfig.model,
+        instructions: body.instructions ?? botConfig.instructions ?? undefined,
         tools: responsesTools,
       };
 
-      // Build conversation history from MongoDB, then append this turn's user message.
-      const priorInput = await buildConversationInput(conversationId);
-      const messagesInput = [
-        ...priorInput,
-        { role: 'user', content: text },
-      ];
+      if (typeof botConfig.temperature === 'number') {
+        effectiveBody.temperature = botConfig.temperature;
+      }
+
+      // Resolve (or create) the OpenAI Conversations API conversation for
+      // this LibreChat conversation. On a brand-new conversation the
+      // helper seeds OpenAI with any prior MongoDB history; on
+      // continuations it just returns the stored mapping. After this,
+      // OpenAI holds the authoritative context and we only send the new
+      // turn's user message as `input`.
+      const { openai_conversation_id } = await getOrCreateOpenAIConversation({
+        openai,
+        conversationId,
+        userId: req.user.id,
+      });
+
+      // Only the new user message needs to be sent this turn — OpenAI
+      // prepends the conversation's prior items server-side.
+      const messagesInput = [{ role: 'user', content: text }];
 
       /** @type {undefined | TAssistantEndpoint} */
       const config = req.app.locals[endpoint] ?? {};
@@ -379,6 +389,7 @@ const chatV2 = async (req, res) => {
         parentMessageId: userMessageId,
         responseMessage: openai.responseMessage,
         streamRate: allConfig?.streamRate ?? config.streamRate,
+        openaiConversationId: openai_conversation_id,
       });
 
       // Send the initial sync response before streaming starts, so the client

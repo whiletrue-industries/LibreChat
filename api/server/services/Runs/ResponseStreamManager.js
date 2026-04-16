@@ -13,13 +13,20 @@ const { logger } = require('~/config');
 
 /**
  * Manages streaming responses using the OpenAI Responses API.
- * Drop-in alternative to StreamRunManager for the Responses API path.
  *
- * The Responses API differs from the Assistants API in that:
- * - There are no threads or runs; full conversation history is sent as `input`
+ * The Responses API differs from the (retired) Assistants API in that:
+ * - There are no threads or runs; conversation context lives either in an
+ *   OpenAI Conversation (preferred) or is re-sent on every call as `input`
  * - Tool calls arrive as output items in the stream, not as run step events
- * - Follow-up calls with tool outputs are new `responses.create` calls, not `submitToolOutputs`
- * - The response object replaces the run object for status and usage tracking
+ * - Follow-up calls with tool outputs are new `responses.create` calls,
+ *   not `submitToolOutputs`
+ * - The response object replaces the run object for status/usage tracking
+ *
+ * When `openaiConversationId` is provided the manager hands context
+ * management to OpenAI — only the newest user turn is passed as `input`
+ * and the `conversation` parameter points at the server-side OpenAI
+ * conversation. Follow-up (tool-output) turns in the same stream still
+ * reference the same `conversation` so the full history stays server-side.
  */
 class ResponseStreamManager {
   constructor(fields) {
@@ -63,6 +70,12 @@ class ResponseStreamManager {
     this.visionPromise = fields.visionPromise;
     /** @type {number} */
     this.streamRate = fields.streamRate ?? Constants.DEFAULT_STREAM_RATE;
+    /**
+     * OpenAI Conversations API id (e.g. `conv_abc123`). When set, requests
+     * pass `conversation: <id>` and omit prior history from `input`.
+     * @type {string|null}
+     */
+    this.openaiConversationId = fields.openaiConversationId ?? null;
 
     /**
      * Accumulated function call items from the stream.
@@ -203,7 +216,10 @@ class ResponseStreamManager {
   /**
    * Build the request body for openai.responses.create.
    *
-   * @param {Array<Object>} input - The input array (messages, or messages + function calls + outputs for follow-ups).
+   * @param {Array<Object>} input - The input items for this turn. When
+   *   `openaiConversationId` is set, this should ONLY contain the new items
+   *   for this turn (e.g. the user message, or function-call + output pairs
+   *   for a follow-up). Prior history is held by the OpenAI Conversation.
    * @param {Object} body - The run body (assistant_id, model, instructions, etc.)
    * @returns {Object} The request body for responses.create.
    */
@@ -213,6 +229,12 @@ class ResponseStreamManager {
       input,
       stream: true,
     };
+
+    if (this.openaiConversationId) {
+      // Tell OpenAI to link this response to the existing Conversation;
+      // OpenAI will prepend the conversation's prior items automatically.
+      requestBody.conversation = this.openaiConversationId;
+    }
 
     if (body.instructions) {
       requestBody.instructions = body.instructions;
@@ -228,6 +250,12 @@ class ResponseStreamManager {
     // Pass through tools if provided
     if (body.tools && body.tools.length > 0) {
       requestBody.tools = body.tools;
+    }
+
+    // Pass through temperature if the BotConfig provides it. The
+    // Responses API expects a flat `temperature` field.
+    if (typeof body.temperature === 'number') {
+      requestBody.temperature = body.temperature;
     }
 
     return requestBody;
@@ -649,7 +677,18 @@ class ResponseStreamManager {
     // Clear pending calls
     this._pendingFunctionCalls.clear();
 
-    // Build follow-up input with function call items and their outputs
+    // Build follow-up input with function call items and their outputs.
+    //
+    // When backed by an OpenAI Conversation:
+    //   - The user turn AND the `function_call` items emitted by the
+    //     previous `response.create` are already in the conversation
+    //     server-side. Re-sending them as `input` yields:
+    //       `400 Duplicate item found with id fc_...`
+    //   - We only need to send the matching `function_call_output`s.
+    //
+    // Otherwise (stateless mode):
+    //   - OpenAI has no memory of prior turns, so we must echo the user
+    //     message, the function_call items, and their outputs every time.
     const functionCallItems = pendingCalls.map((call) => ({
       type: 'function_call',
       id: call.id,
@@ -664,11 +703,9 @@ class ResponseStreamManager {
       output: typeof output.output === 'string' ? output.output : JSON.stringify(output.output),
     }));
 
-    const followUpInput = [
-      ...originalMessages,
-      ...functionCallItems,
-      ...functionOutputItems,
-    ];
+    const followUpInput = this.openaiConversationId
+      ? [...functionOutputItems]
+      : [...originalMessages, ...functionCallItems, ...functionOutputItems];
 
     logger.info(JSON.stringify({
       event: 'tool_outputs_submitted',
