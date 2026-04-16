@@ -75,6 +75,13 @@ module "librechat" {
     # vanilla GPT-4 with no tools — not what users expect.
     ENDPOINTS = "assistants"
 
+    # Restrict the assistants menu to just the unified bot so the UI
+    # auto-selects it on load. The listing is filtered server-side in
+    # controllers/assistants/helpers.js before the admin bypass, so this
+    # applies to every user. Staging's unified assistant ID ("- פיתוח"
+    # suffix); prod has its own ID that needs a separate override.
+    ASSISTANT_SUPPORTED_IDS = "asst_Dr24jZHHB1Vurjhq0HanWVaQ"
+
     # BotConfig endpoint wiring (post Assistants-API migration). LibreChat's
     # BotConfigService fetches GET ${BOTNIM_API}/botnim/config/<bot>?environment=<env>
     # at request time and passes the returned {model, instructions, tools}

@@ -228,6 +228,23 @@ const fetchAssistants = async ({ req, res, overrideEndpoint }) => {
     body = await listAssistantsForAzure({ req, res, version, azureConfig, query });
   }
 
+  // Env-var allowlist: applies to every user (including admins) and is
+  // checked BEFORE the admin bypass / yaml config. Purpose: on ECS we
+  // don't mount librechat.yaml, so `supportedIds` from there is unreachable.
+  // Setting `ASSISTANT_SUPPORTED_IDS=<comma-separated-ids>` in the task
+  // environment restricts the assistants menu to the one(s) the deployed
+  // stack actually expects, which also makes the UI auto-select when only
+  // one remains.
+  const envAllowlistRaw = process.env.ASSISTANT_SUPPORTED_IDS ?? '';
+  const envAllowlist = envAllowlistRaw
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (envAllowlist.length) {
+    body.data = body.data.filter((a) => envAllowlist.includes(a.id));
+    return body;
+  }
+
   if (req.user.role === SystemRoles.ADMIN) {
     return body;
   } else if (!req.app.locals[endpoint]) {
