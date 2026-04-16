@@ -169,13 +169,16 @@ const processVisionRequest = async (client, currentAction) => {
 
 /**
  * Processes return required actions from run.
- * @param {OpenAIClient | StreamRunManager} client - OpenAI (legacy) or StreamRunManager Client.
+ * @param {OpenAIClient | StreamRunManager | ResponseStreamManager} client - OpenAI (legacy), StreamRunManager, or ResponseStreamManager Client.
  * @param {RequiredAction[]} requiredActions - The required actions to submit outputs for.
  * @returns {Promise<ToolOutputs>} The outputs of the tools.
  */
 async function processRequiredActions(client, requiredActions) {
+  const firstAction = requiredActions[0] || {};
+  const threadInfo = firstAction.thread_id ? ` | thread_id: ${firstAction.thread_id}` : '';
+  const runInfo = firstAction.run_id ? ` | run_id: ${firstAction.run_id}` : '';
   logger.debug(
-    `[required actions] user: ${client.req.user.id} | thread_id: ${requiredActions[0].thread_id} | run_id: ${requiredActions[0].run_id}`,
+    `[required actions] user: ${client.req.user.id}${threadInfo}${runInfo}`,
     requiredActions,
   );
   const tools = requiredActions.map((action) => action.tool);
@@ -338,7 +341,7 @@ async function processRequiredActions(client, requiredActions) {
         const validationResult = validateAndParseOpenAPISpec(actionSet.metadata.raw_spec);
         if (!validationResult.spec) {
           throw new Error(
-            `Invalid spec: user: ${client.req.user.id} | thread_id: ${requiredActions[0].thread_id} | run_id: ${requiredActions[0].run_id}`,
+            `Invalid spec: user: ${client.req.user.id}${threadInfo}${runInfo}`,
           );
         }
         const { requestBuilders } = openapiToFunction(validationResult.spec);
