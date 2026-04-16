@@ -130,11 +130,11 @@ export default function useChatFunctions({
     const parentMessage = currentMessages.find(
       (msg) => msg.messageId === latestMessage?.parentMessageId,
     );
-
-    let thread_id = parentMessage?.thread_id ?? latestMessage?.thread_id;
-    if (!thread_id) {
-      thread_id = currentMessages.find((message) => message.thread_id)?.thread_id;
-    }
+    // `thread_id` was previously threaded through here for the Assistants
+    // API. With the Responses-API migration, conversation context is held
+    // either in MongoDB (legacy continuations) or in the OpenAI
+    // Conversations API (keyed by conversationId) — no client-side id is
+    // needed.
 
     const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
     const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
@@ -150,7 +150,6 @@ export default function useChatFunctions({
     const endpointOption = {
       ...convo,
       endpoint,
-      thread_id,
       endpointType,
       overrideConvoId,
       key: getExpiry(),
@@ -167,7 +166,6 @@ export default function useChatFunctions({
       parentMessageId,
       conversationId,
       messageId: isContinued && messageId ? messageId : intermediateId,
-      thread_id,
       error: false,
     };
 
@@ -199,7 +197,6 @@ export default function useChatFunctions({
       endpoint: endpoint ?? '',
       parentMessageId: isRegenerate ? messageId : intermediateId,
       messageId: responseMessageId ?? `${isRegenerate ? messageId : intermediateId}_`,
-      thread_id,
       conversationId,
       unfinished: false,
       isCreatedByUser: false,

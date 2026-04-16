@@ -28,10 +28,15 @@ const initializeClient = async ({ req, res, endpointOption, version, initAppClie
   let apiKey = userProvidesKey ? userValues.apiKey : ASSISTANTS_API_KEY;
   let baseURL = userProvidesURL ? userValues.baseURL : ASSISTANTS_BASE_URL;
 
+  // NOTE: the `OpenAI-Beta: assistants=v2` header was required for the
+  // retired Assistants API threads/runs path. With the Responses-API
+  // migration this header is no longer needed, and some org keys now
+  // reject it with `400 Unknown beta requested: 'assistants'`. We
+  // intentionally skip it. The `version` arg is kept for signature
+  // compatibility with callers that still list it.
+  void version;
   const opts = {
-    defaultHeaders: {
-      'OpenAI-Beta': `assistants=${version}`,
-    },
+    defaultHeaders: {},
   };
 
   const clientOptions = {

@@ -47,6 +47,16 @@ const convoSchema = mongoose.Schema(
       default: [],
       meiliIndex: true,
     },
+    /**
+     * OpenAI Conversations API conversation id (e.g. `conv_abc123`) mapped
+     * 1:1 to this LibreChat conversation. Populated lazily on the first
+     * `responses.create` call for a given conversation; see
+     * `api/server/services/Threads/manage.js#getOrCreateOpenAIConversation`.
+     */
+    openai_conversation_id: {
+      type: String,
+      default: null,
+    },
   },
   { timestamps: true },
 );

@@ -108,7 +108,15 @@ const messageSchema = mongoose.Schema(
       default: undefined,
       meiliIndex: true,
     },
-    thread_id: {
+    // MIGRATION NOTE (2026-04-16): the `thread_id` field was removed when
+    // the Assistants threads/runs chat path was retired in favour of the
+    // Responses API. Existing documents in production may still have a
+    // `thread_id` value on them — Mongoose silently ignores unknown fields
+    // when reading, so no data migration is required, but if you want to
+    // reclaim disk space run:
+    //   db.messages.updateMany({}, { $unset: { thread_id: "" } })
+    /* Responses API identifier (replaces thread_id). */
+    response_id: {
       type: String,
     },
     /* frontend components */

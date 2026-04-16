@@ -34,7 +34,6 @@ import store from '~/store';
 
 type TSyncData = {
   sync: boolean;
-  thread_id: string;
   messages?: TMessage[];
   requestMessage: TMessage;
   responseMessage: TMessage;
@@ -173,7 +172,7 @@ export default function useEventHandlers({
 
   const syncHandler = useCallback(
     (data: TSyncData, submission: EventSubmission) => {
-      const { conversationId, thread_id, responseMessage, requestMessage } = data;
+      const { conversationId, responseMessage, requestMessage } = data;
       const { initialResponse, messages: _messages, userMessage } = submission;
 
       const messages = _messages.filter((msg) => msg.messageId !== userMessage.messageId);
@@ -206,7 +205,6 @@ export default function useEventHandlers({
           update = tConvoUpdateSchema.parse({
             ...prevState,
             conversationId,
-            thread_id,
             title,
             messages: [requestMessage.messageId, responseMessage.messageId],
           }) as TConversation;
@@ -229,7 +227,6 @@ export default function useEventHandlers({
           update = tConvoUpdateSchema.parse({
             ...prevState,
             conversationId,
-            thread_id,
             messages: [requestMessage.messageId, responseMessage.messageId],
           }) as TConversation;
           return update;

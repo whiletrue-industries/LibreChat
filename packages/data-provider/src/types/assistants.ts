@@ -328,7 +328,6 @@ export type TContentData = StreamContentData & {
   messageId: string;
   conversationId: string;
   userMessageId: string;
-  thread_id: string;
   stream?: boolean;
 };
 

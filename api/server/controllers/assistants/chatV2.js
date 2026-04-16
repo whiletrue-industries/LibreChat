@@ -6,22 +6,20 @@ const {
   CacheKeys,
   ContentTypes,
   ToolCallTypes,
-  EModelEndpoint,
   retrievalMimeTypes,
-  AssistantStreamEvents,
 } = require('librechat-data-provider');
 const {
-  initThread,
   recordUsage,
   saveUserMessage,
-  addThreadMetadata,
   saveAssistantMessage,
+  getOrCreateOpenAIConversation,
 } = require('~/server/services/Threads');
-const { runAssistant, createOnTextProgress } = require('~/server/services/AssistantService');
-const { sendMessage, sleep, isEnabled, countTokens } = require('~/server/utils');
+const { createOnTextProgress } = require('~/server/services/AssistantService');
+const { sendMessage, isEnabled, countTokens } = require('~/server/utils');
 const { createErrorHandler } = require('~/server/controllers/assistants/errors');
 const validateAuthor = require('~/server/middleware/assistants/validateAuthor');
-const { createRun, StreamRunManager } = require('~/server/services/Runs');
+const { ResponseStreamManager } = require('~/server/services/Runs');
+const { getBotConfig } = require('~/server/services/BotConfigService');
 const { addTitle } = require('~/server/services/Endpoints/assistants');
 const { getTransactions } = require('~/models/Transaction');
 const checkBalance = require('~/models/checkBalance');
@@ -35,7 +33,23 @@ const ten_minutes = 1000 * 60 * 10;
 
 /**
  * @route POST /
- * @desc Chat with an assistant
+ * @desc Chat with an assistant via the OpenAI Responses API.
+ *
+ * The Assistants API chat path (threads/runs) was removed as part of the
+ * Responses-API migration; the Assistants API retires 2026-08-26.
+ *
+ * Conversation context is held server-side by the OpenAI Conversations API:
+ * on the first turn we call `getOrCreateOpenAIConversation` which creates a
+ * `conv_…` and persists the mapping on the LibreChat conversation document.
+ * On every subsequent turn we pass that id as the `conversation` parameter
+ * to `responses.create` and only send the new user message as `input` —
+ * OpenAI prepends all prior items for us.
+ *
+ * NOTE: `openai.beta.assistants.retrieve()` is still used here to fetch the
+ * model, instructions, and tool definitions configured for an assistant.
+ * That Assistants *management* call will be migrated to the Prompts API in
+ * a follow-up task.
+ *
  * @access Public
  * @param {Express.Request} req - The request object, containing the request data.
  * @param {Express.Response} res - The response object, used to send back a response.
@@ -54,7 +68,6 @@ const chatV2 = async (req, res) => {
     assistant_id,
     instructions,
     endpointOption,
-    thread_id: _thread_id,
     messageId: _messageId,
     conversationId: convoId,
     parentMessageId: _parentId = Constants.NO_PARENT,
@@ -62,9 +75,7 @@ const chatV2 = async (req, res) => {
 
   /** @type {OpenAIClient} */
   let openai;
-  /** @type {string|undefined} - the current thread id */
-  let thread_id = _thread_id;
-  /** @type {string|undefined} - the current run id */
+  /** @type {string|undefined} - the current run id (response id under Responses API) */
   let run_id;
   /** @type {string|undefined} - the parent messageId */
   let parentMessageId = _parentId;
@@ -96,7 +107,6 @@ const chatV2 = async (req, res) => {
     run_id,
     endpoint,
     cacheKey,
-    thread_id,
     completedRun,
     assistant_id,
     conversationId,
@@ -112,11 +122,6 @@ const chatV2 = async (req, res) => {
         await handleError(new Error('Request closed'));
       }
     });
-
-    if (convoId && !_thread_id) {
-      completedRun = true;
-      throw new Error('Missing thread_id for existing conversation');
-    }
 
     if (!assistant_id) {
       completedRun = true;
@@ -139,7 +144,7 @@ const chatV2 = async (req, res) => {
       );
 
       // TODO: make promptBuffer a config option; buffer for titles, needs buffer for system instructions
-      const promptBuffer = parentMessageId === Constants.NO_PARENT && !_thread_id ? 200 : 0;
+      const promptBuffer = parentMessageId === Constants.NO_PARENT ? 200 : 0;
       // 5 is added for labels
       let promptTokens = (await countTokens(text + (promptPrefix ?? ''))) + 5;
       promptTokens += totalPreviousTokens + promptBuffer;
@@ -254,27 +259,14 @@ const chatV2 = async (req, res) => {
     /** @type {Promise<Run>|undefined} */
     let userMessagePromise;
 
-    const initializeThread = async () => {
+    const initializeRequest = async () => {
       await getRequestFileIds();
-
-      // TODO: may allow multiple messages to be created beforehand in a future update
-      const initThreadBody = {
-        messages: [userMessage],
-        metadata: {
-          user: req.user.id,
-          conversationId,
-        },
-      };
-
-      const result = await initThread({ openai, body: initThreadBody, thread_id });
-      thread_id = result.thread_id;
 
       createOnTextProgress({
         openai,
         conversationId,
         userMessageId,
         messageId: responseMessageId,
-        thread_id,
       });
 
       requestMessage = {
@@ -288,7 +280,6 @@ const chatV2 = async (req, res) => {
         conversationId,
         isCreatedByUser: true,
         assistant_id,
-        thread_id,
         model: assistant_id,
         endpoint,
       };
@@ -312,7 +303,7 @@ const chatV2 = async (req, res) => {
       }
     };
 
-    const promises = [initializeThread(), checkBalanceBeforeRun()];
+    const promises = [initializeRequest(), checkBalanceBeforeRun()];
     await Promise.all(promises);
 
     const sendInitialResponse = () => {
@@ -327,84 +318,93 @@ const chatV2 = async (req, res) => {
           parentMessageId: userMessageId,
           conversationId,
           assistant_id,
-          thread_id,
           model: assistant_id,
         },
       });
     };
 
-    /** @type {RunResponse | typeof StreamRunManager | undefined} */
+    /** @type {ResponseStreamManager | undefined} */
     let response;
 
-    const processRun = async (retry = false) => {
-      if (endpoint === EModelEndpoint.azureAssistants) {
-        body.model = openai._options.model;
-        openai.attachedFileIds = attachedFileIds;
-        if (retry) {
-          response = await runAssistant({
-            openai,
-            thread_id,
-            run_id,
-            in_progress: openai.in_progress,
-          });
-          return;
-        }
+    const processRun = async () => {
+      // Fetch the BotConfig bundle from botnim-api. Its tool shape is
+      // already the flat Responses-API form, so we pass it straight
+      // through. This replaces the old
+      // `openai.beta.assistants.retrieve(assistant_id)` call — per the
+      // contract at rebuilding-bots/docs/LIBRECHAT_SYNC_CONTRACT.md the
+      // Assistants API has no equivalent `Prompts` REST surface, so
+      // botnim-api re-emits the config from `specs/<bot>/` on every
+      // request and LibreChat caches it briefly.
+      const botSlug = process.env.BOTNIM_BOT_SLUG ?? 'unified';
+      const botEnv = process.env.BOTNIM_ENVIRONMENT ?? 'staging';
+      const botConfig = await getBotConfig({ bot: botSlug, environment: botEnv });
 
-        /* NOTE:
-         * By default, a Run will use the model and tools configuration specified in Assistant object,
-         * but you can override most of these when creating the Run for added flexibility:
-         */
-        const run = await createRun({
-          openai,
-          thread_id,
-          body,
-        });
+      // Keep only function tools — the tool-execution loop in
+      // ResponseStreamManager only handles `function_call` output items.
+      // Other tool types (code_interpreter, file_search, …) are dropped
+      // here; if/when we add support they can be re-enabled by removing
+      // this filter.
+      const responsesTools = (botConfig.tools ?? []).filter(
+        (tool) => tool?.type === 'function',
+      );
 
-        run_id = run.id;
-        await cache.set(cacheKey, `${thread_id}:${run_id}`, ten_minutes);
-        sendInitialResponse();
+      const effectiveBody = {
+        ...body,
+        model: body.model ?? botConfig.model,
+        instructions: body.instructions ?? botConfig.instructions ?? undefined,
+        tools: responsesTools,
+      };
 
-        // todo: retry logic
-        response = await runAssistant({ openai, thread_id, run_id });
-        return;
+      if (typeof botConfig.temperature === 'number') {
+        effectiveBody.temperature = botConfig.temperature;
       }
 
-      /** @type {{[AssistantStreamEvents.ThreadRunCreated]: (event: ThreadRunCreated) => Promise<void>}} */
-      const handlers = {
-        [AssistantStreamEvents.ThreadRunCreated]: async (event) => {
-          await cache.set(cacheKey, `${thread_id}:${event.data.id}`, ten_minutes);
-          run_id = event.data.id;
-          sendInitialResponse();
-        },
-      };
+      // Resolve (or create) the OpenAI Conversations API conversation for
+      // this LibreChat conversation. On a brand-new conversation the
+      // helper seeds OpenAI with any prior MongoDB history; on
+      // continuations it just returns the stored mapping. After this,
+      // OpenAI holds the authoritative context and we only send the new
+      // turn's user message as `input`.
+      const { openai_conversation_id } = await getOrCreateOpenAIConversation({
+        openai,
+        conversationId,
+        userId: req.user.id,
+      });
+
+      // Only the new user message needs to be sent this turn — OpenAI
+      // prepends the conversation's prior items server-side.
+      const messagesInput = [{ role: 'user', content: text }];
 
       /** @type {undefined | TAssistantEndpoint} */
       const config = req.app.locals[endpoint] ?? {};
       /** @type {undefined | TBaseEndpoint} */
       const allConfig = req.app.locals.all;
 
-      const streamRunManager = new StreamRunManager({
+      const responseStreamManager = new ResponseStreamManager({
         req,
         res,
         openai,
-        handlers,
-        thread_id,
+        handlers: {},
         attachedFileIds,
         parentMessageId: userMessageId,
         responseMessage: openai.responseMessage,
         streamRate: allConfig?.streamRate ?? config.streamRate,
-        // streamOptions: {
-
-        // },
+        openaiConversationId: openai_conversation_id,
       });
 
-      await streamRunManager.runAssistant({
-        thread_id,
-        body,
+      // Send the initial sync response before streaming starts, so the client
+      // receives the placeholder responseMessage immediately.
+      await cache.set(cacheKey, `${conversationId}:${responseMessageId}`, ten_minutes);
+      sendInitialResponse();
+
+      await responseStreamManager.runResponse({
+        messages: messagesInput,
+        body: effectiveBody,
       });
 
-      response = streamRunManager;
-      response.text = streamRunManager.intermediateText;
+      response = responseStreamManager;
+      response.text = responseStreamManager.intermediateText;
+      run_id = responseStreamManager.responseId;
 
       const messageCache = getLogStores(CacheKeys.MESSAGES);
       messageCache.set(
@@ -428,10 +428,6 @@ const chatV2 = async (req, res) => {
       return res.end();
     }
 
-    if (response.run.status === RunStatus.IN_PROGRESS) {
-      processRun(true);
-    }
-
     completedRun = response.run;
 
     /** @type {ResponseMessage} */
@@ -442,17 +438,19 @@ const chatV2 = async (req, res) => {
       conversationId,
       user: req.user.id,
       assistant_id,
-      thread_id,
       model: assistant_id,
       endpoint,
     };
+
+    if (response.responseId) {
+      responseMessage.response_id = response.responseId;
+    }
 
     sendMessage(res, {
       final: true,
       conversation,
       requestMessage: {
         parentMessageId,
-        thread_id,
       },
     });
     res.end();
@@ -462,7 +460,7 @@ const chatV2 = async (req, res) => {
     }
     await saveAssistantMessage(req, { ...responseMessage, model });
 
-    if (parentMessageId === Constants.NO_PARENT && !_thread_id) {
+    if (parentMessageId === Constants.NO_PARENT) {
       addTitle(req, {
         text,
         responseText: response.text,
@@ -471,25 +469,9 @@ const chatV2 = async (req, res) => {
       });
     }
 
-    await addThreadMetadata({
-      openai,
-      thread_id,
-      messageId: responseMessage.messageId,
-      messages: response.messages,
-    });
-
-    if (!response.run.usage) {
-      await sleep(3000);
-      completedRun = await openai.beta.threads.runs.retrieve(thread_id, response.run.id);
-      if (completedRun.usage) {
-        await recordUsage({
-          ...completedRun.usage,
-          user: req.user.id,
-          model: completedRun.model ?? model,
-          conversationId,
-        });
-      }
-    } else {
+    // Responses API exposes usage directly on the response object captured
+    // into `response.run.usage`. No thread/run retrieval needed.
+    if (response.run?.usage) {
       await recordUsage({
         ...response.run.usage,
         user: req.user.id,
@@ -497,6 +479,7 @@ const chatV2 = async (req, res) => {
         conversationId,
       });
     }
+
   } catch (error) {
     await handleError(error);
   }

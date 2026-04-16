@@ -36,8 +36,6 @@ export type TEndpointOption = {
   modelLabel?: string | null;
   jailbreak?: boolean;
   key?: string | null;
-  /* assistant */
-  thread_id?: string;
   /* multi-response stream */
   overrideConvoId?: string;
   overrideUserMessageId?: string;
@@ -142,7 +140,6 @@ export type TUpdateConversationResponse = TConversation;
 
 export type TDeleteConversationRequest = {
   conversationId?: string;
-  thread_id?: string;
   source?: string;
 };
 

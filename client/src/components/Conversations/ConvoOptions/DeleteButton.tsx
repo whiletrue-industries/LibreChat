@@ -1,8 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { QueryKeys } from 'librechat-data-provider';
-import { useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
-import type { TMessage } from 'librechat-data-provider';
 import { useDeleteConversationMutation } from '~/data-provider';
 import {
   OGDialog,
@@ -36,7 +33,6 @@ export default function DeleteButton({
 }: DeleteButtonProps) {
   const localize = useLocalize();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const { newConversation } = useNewConvo();
   const { conversationId: currentConvoId } = useParams();
   const [open, setOpen] = useState(false);
@@ -51,11 +47,12 @@ export default function DeleteButton({
   });
 
   const confirmDelete = useCallback(() => {
-    const messages = queryClient.getQueryData<TMessage[]>([QueryKeys.messages, conversationId]);
-    const thread_id = messages?.[messages.length - 1]?.thread_id;
-
-    deleteConvoMutation.mutate({ conversationId, thread_id, source: 'button' });
-  }, [conversationId, deleteConvoMutation, queryClient]);
+    // `thread_id` was removed with the Responses-API migration; deleting
+    // the LibreChat conversation in Mongo is sufficient — any associated
+    // OpenAI Conversation is orphaned server-side and ages out per
+    // OpenAI's retention policy.
+    deleteConvoMutation.mutate({ conversationId, source: 'button' });
+  }, [conversationId, deleteConvoMutation]);
 
   const dialogContent = (
     <OGDialogTemplate

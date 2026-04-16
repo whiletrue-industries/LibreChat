@@ -168,14 +168,17 @@ const processVisionRequest = async (client, currentAction) => {
 };
 
 /**
- * Processes return required actions from run.
- * @param {OpenAIClient | StreamRunManager} client - OpenAI (legacy) or StreamRunManager Client.
+ * Processes required actions (tool calls) from a Responses-API response.
+ * @param {ResponseStreamManager} client - The stream manager driving the response.
  * @param {RequiredAction[]} requiredActions - The required actions to submit outputs for.
  * @returns {Promise<ToolOutputs>} The outputs of the tools.
  */
 async function processRequiredActions(client, requiredActions) {
+  // thread_id / run_id are no longer set on actions — the Assistants
+  // threads/runs path was removed. The ResponseStreamManager tags its
+  // actions with just { tool, toolInput, toolCallId }.
   logger.debug(
-    `[required actions] user: ${client.req.user.id} | thread_id: ${requiredActions[0].thread_id} | run_id: ${requiredActions[0].run_id}`,
+    `[required actions] user: ${client.req.user.id}`,
     requiredActions,
   );
   const tools = requiredActions.map((action) => action.tool);
@@ -301,11 +304,26 @@ async function processRequiredActions(client, requiredActions) {
       }
       if (!actionSets.length) {
         actionSets = loadedSpecs.map((spec) => {
+          // Extract hostname from the OpenAPI spec's first server URL.
+          // Without this, action.metadata.domain is empty and the request
+          // builder produces URLs with no host, resulting in
+          // "API call to  failed" errors when the synthetic action set
+          // is used (i.e., when no DB action set exists for the assistant).
+          let domain = '';
+          try {
+            const servers = spec.openapi && spec.openapi.servers;
+            const url = servers && servers[0] && servers[0].url;
+            if (url) {
+              domain = new URL(url).hostname;
+            }
+          } catch (e) {
+            logger.warn(`Could not parse server URL from spec ${spec.spec && spec.spec.name_for_model}: ${e.message}`);
+          }
           return {
             action_id: spec.spec.name_for_model,
             type: 'function',
             metadata: {
-              domain: '',
+              domain,
               raw_spec: JSON.stringify(spec.openapi),
             },
           };
@@ -338,7 +356,7 @@ async function processRequiredActions(client, requiredActions) {
         const validationResult = validateAndParseOpenAPISpec(actionSet.metadata.raw_spec);
         if (!validationResult.spec) {
           throw new Error(
-            `Invalid spec: user: ${client.req.user.id} | thread_id: ${requiredActions[0].thread_id} | run_id: ${requiredActions[0].run_id}`,
+            `Invalid spec: user: ${client.req.user.id}`,
           );
         }
         const { requestBuilders } = openapiToFunction(validationResult.spec);

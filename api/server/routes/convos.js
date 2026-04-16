@@ -1,7 +1,6 @@
 const multer = require('multer');
 const express = require('express');
 const { CacheKeys } = require('librechat-data-provider');
-const { initializeClient } = require('~/server/services/Endpoints/assistants');
 const { getConvosByPage, deleteConvos, getConvo, saveConvo } = require('~/models/Conversation');
 const { storage, importFileFilter } = require('~/server/routes/files/multer');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
@@ -74,7 +73,7 @@ router.post('/gen_title', async (req, res) => {
 
 router.post('/clear', async (req, res) => {
   let filter = {};
-  const { conversationId, source, thread_id } = req.body.arg;
+  const { conversationId, source } = req.body.arg;
   if (conversationId) {
     filter = { conversationId };
   }
@@ -83,16 +82,10 @@ router.post('/clear', async (req, res) => {
     return res.status(200).send('No conversationId provided');
   }
 
-  if (thread_id) {
-    /** @type {{ openai: OpenAI}} */
-    const { openai } = await initializeClient({ req, res });
-    try {
-      const response = await openai.beta.threads.del(thread_id);
-      logger.debug('Deleted OpenAI thread:', response);
-    } catch (error) {
-      logger.error('Error deleting OpenAI thread:', error);
-    }
-  }
+  // Under the Responses API migration there is no server-side thread to
+  // delete. (The OpenAI Conversations API id attached to a conversation
+  // is implicitly orphaned when we delete the conversation here; OpenAI
+  // retains Conversations for 30 days by default.)
 
   // for debugging deletion source
   // logger.debug('source:', source);
