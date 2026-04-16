@@ -348,10 +348,18 @@ const chatV2 = async (req, res) => {
         (tool) => tool?.type === 'function',
       );
 
+      // BotConfig is the authoritative source for model/instructions/tools
+      // — it's the whole point of the code-managed config pattern. Let
+      // BotConfig override whatever model the UI sent. LibreChat's endpoint
+      // list ships older models (e.g. gpt-4.1) that users may still have
+      // selected in their UI; ignoring those on the server side keeps the
+      // assistant's model in sync with what's defined in specs/<bot>/.
+      // Only fall back to the client-sent value if BotConfig somehow lacks
+      // one, which would indicate a misconfigured spec.
       const effectiveBody = {
         ...body,
-        model: body.model ?? botConfig.model,
-        instructions: body.instructions ?? botConfig.instructions ?? undefined,
+        model: botConfig.model ?? body.model,
+        instructions: botConfig.instructions ?? body.instructions ?? undefined,
         tools: responsesTools,
       };
 
