@@ -34,15 +34,19 @@ variable "listener_priority" {
 }
 
 variable "mongo_image" {
+  # Mirrored to private ECR to avoid Docker Hub anonymous pull rate limits.
   description = "MongoDB Docker image tag."
   type        = string
-  default     = "mongo:7"
+  default     = "377114444836.dkr.ecr.il-central-1.amazonaws.com/mirror/mongo:7"
 }
 
 variable "meili_image" {
+  # Mirrored to private ECR (377114444836.dkr.ecr.il-central-1.amazonaws.com/mirror/meilisearch:v1.7.3)
+  # because Docker Hub's anonymous pull rate limit (shared across all Fargate
+  # tasks behind the same NAT gateway) blocks rolling deploys with 429s.
   description = "MeiliSearch Docker image tag."
   type        = string
-  default     = "getmeili/meilisearch:v1.7.3"
+  default     = "377114444836.dkr.ecr.il-central-1.amazonaws.com/mirror/meilisearch:v1.7.3"
 }
 
 variable "botnim_api_url" {
