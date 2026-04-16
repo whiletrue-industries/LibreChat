@@ -31,6 +31,11 @@ module "librechat" {
   cpu    = 1024
   memory = 3072
 
+  # Encrypt the service's CloudWatch log group with the cluster's CMK so
+  # ECS Exec sessions can start. Without this, SSM refuses to open a
+  # session against tasks in this service.
+  log_group_kms_key_arn = local.contract.ecs.kms_key_arn
+
   public = {
     # Shares the botnim.<zone> host with botnim-api (which owns the DNS
     # record and the /botnim/* routing at priority 100). LibreChat sits at
@@ -71,8 +76,8 @@ module "librechat" {
     # OpenID/Keycloak integration (Monday task #2844301706), or flip
     # ALLOW_REGISTRATION=true temporarily, register via /register, flip back.
     CREATE_BOOTSTRAP_USER = "true"
-    BOOTSTRAP_USER_EMAIL  = "botnim.staging@build-up.team"
-    BOOTSTRAP_USER_NAME   = "Botnim Staging"
+    BOOTSTRAP_USER_EMAIL  = "botnim.staging.admin@build-up.team"
+    BOOTSTRAP_USER_NAME   = "Botnim Staging Admin"
   }
 
   secret_environment_variables = {
