@@ -47,6 +47,12 @@ module "librechat" {
     path_patterns     = ["/*"]
   }
 
+  # Join the shared Service Connect namespace as a client so this task can
+  # resolve `botnim-api` (published by the rebuilding-bots stack) to its
+  # private IPs. Hairpinning through the public ALB failed from the private
+  # subnet; internal service-to-service calls go direct.
+  internal_client = {}
+
   environment_variables = {
     HOST           = "0.0.0.0"
     NODE_ENV       = "production"
@@ -56,12 +62,32 @@ module "librechat" {
     MEILI_HOST     = "http://localhost:7700"
     SEARCH         = "true"
     RAG_API_URL    = ""
-    BOTNIM_API_URL = coalesce(var.botnim_api_url, "https://${local.botnim_fqdn}")
+    # Call botnim-api via Service Connect (in-VPC) rather than the public
+    # ALB. The public hairpin from a NAT'd private subnet back to the same
+    # internet-facing ALB was failing with undici "fetch failed" on every
+    # BotConfigService prefetch. Service Connect resolves `botnim-api` to
+    # the task's private IPs directly. If var.botnim_api_url is set
+    # (e.g. for manual override), it still wins.
+    BOTNIM_API_URL = coalesce(var.botnim_api_url, "http://botnim-api:8000")
 
     # Show only the Assistants endpoint (the Botnim bots). Without this,
     # LibreChat also shows raw "OpenAI" and "Plugins" endpoints which use
     # vanilla GPT-4 with no tools — not what users expect.
     ENDPOINTS = "assistants"
+
+    # BotConfig endpoint wiring (post Assistants-API migration). LibreChat's
+    # BotConfigService fetches GET ${BOTNIM_API}/botnim/config/<bot>?environment=<env>
+    # at request time and passes the returned {model, instructions, tools}
+    # directly to client.responses.create(...). Replaces the old
+    # openai.beta.assistants.retrieve() path.
+    # BotConfigService expects the URL to include the /botnim path prefix
+    # when calling a shared-host ALB (the ALB routes /botnim/* to botnim-api
+    # and /* to librechat). The magic regex in BotConfigService only adds
+    # the prefix for local Docker (nginx hostnames); for staging we provide
+    # it explicitly.
+    BOTNIM_API         = "${coalesce(var.botnim_api_url, "http://botnim-api:8000")}/botnim"
+    BOTNIM_BOT_SLUG    = "unified"
+    BOTNIM_ENVIRONMENT = var.environment
 
     # Bootstrap admin user on first boot.
     #
