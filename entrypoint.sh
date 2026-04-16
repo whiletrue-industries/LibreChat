@@ -24,8 +24,22 @@ fi
 # out-of-band via `aws secretsmanager put-secret-value`).
 if [ "$CREATE_BOOTSTRAP_USER" = "true" ]; then
   echo "entrypoint: CREATE_BOOTSTRAP_USER=true, running create-default-user"
-  if ! node /app/config/create-default-user.js; then
-    echo "entrypoint: create-default-user FAILED, aborting boot" >&2
+  # Retry loop: sidecars (mongo, meilisearch) start in parallel with the api
+  # container, so the first attempt may fail with a MeiliSearch or Mongo
+  # connection error. Wait up to 25s (5 attempts × 5s) for them to come up.
+  _attempt=0
+  _ok=false
+  while [ $_attempt -lt 5 ]; do
+    _attempt=$((_attempt + 1))
+    if node /app/config/create-default-user.js 2>&1; then
+      _ok=true
+      break
+    fi
+    echo "entrypoint: create-default-user attempt $_attempt failed, retrying in 5s..."
+    sleep 5
+  done
+  if [ "$_ok" != "true" ]; then
+    echo "entrypoint: create-default-user FAILED after $_attempt attempts, aborting boot" >&2
     exit 1
   fi
 fi
