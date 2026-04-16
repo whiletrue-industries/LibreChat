@@ -31,6 +31,11 @@ module "librechat" {
   cpu    = 1024
   memory = 3072
 
+  # Encrypt the service's CloudWatch log group with the cluster's CMK so
+  # ECS Exec sessions can start. Without this, SSM refuses to open a
+  # session against tasks in this service.
+  log_group_kms_key_arn = local.contract.ecs.kms_key_arn
+
   public = {
     # Shares the botnim.<zone> host with botnim-api (which owns the DNS
     # record and the /botnim/* routing at priority 100). LibreChat sits at
@@ -76,9 +81,35 @@ module "librechat" {
   }
 
   sidecar_containers = [
+    # init-wait-mongo: waits for old task's mongo to release WiredTiger lock.
+    # See staging/main.tf for the full rationale.
+    {
+      name      = "init-wait-mongo"
+      image     = "public.ecr.aws/docker/library/busybox:1.36"
+      essential = false
+      command = [
+        "sh",
+        "-c",
+        "echo '[init-wait-mongo] checking for stale locks'; rm -f /data/db/mongod.lock; echo '[init-wait-mongo] done'; exit 0",
+      ]
+      mount_points = [
+        {
+          container_path = "/data/db"
+          source_volume  = "mongo-data"
+          read_only      = false
+        },
+      ]
+    },
     {
       name  = "mongo"
       image = var.mongo_image
+
+      depends_on = [
+        {
+          container_name = "init-wait-mongo"
+          condition      = "SUCCESS"
+        },
+      ]
 
       command = ["mongod", "--noauth", "--bind_ip", "127.0.0.1"]
 

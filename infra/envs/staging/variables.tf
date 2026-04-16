@@ -28,9 +28,9 @@ variable "desired_count" {
 }
 
 variable "listener_priority" {
-  description = "ALB listener rule priority for /* catch-all routing on the shared botnim.build-up.team host."
+  description = "ALB listener rule priority for /* catch-all on the shared botnim host. Staging botnim-api owns priority 300; LibreChat sits at 310."
   type        = number
-  default     = 200
+  default     = 310
 }
 
 variable "mongo_image" {

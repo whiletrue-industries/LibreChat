@@ -50,11 +50,18 @@ module "librechat" {
   environment_variables = {
     HOST           = "0.0.0.0"
     NODE_ENV       = "production"
+    APP_TITLE      = "בוט-נים - הצ׳ט בוט של בונים מחדש"
+    CUSTOM_FOOTER  = "בוט-נים - הצ'ט בוט של בונים מחדש - גירסא 2.0"
     MONGO_URI      = "mongodb://localhost:27017/LibreChat"
     MEILI_HOST     = "http://localhost:7700"
     SEARCH         = "true"
     RAG_API_URL    = ""
     BOTNIM_API_URL = coalesce(var.botnim_api_url, "https://${local.botnim_fqdn}")
+
+    # Show only the Assistants endpoint (the Botnim bots). Without this,
+    # LibreChat also shows raw "OpenAI" and "Plugins" endpoints which use
+    # vanilla GPT-4 with no tools — not what users expect.
+    ENDPOINTS = "assistants"
 
     # Bootstrap admin user on first boot.
     #
@@ -82,6 +89,9 @@ module "librechat" {
 
   secret_environment_variables = {
     OPENAI_API_KEY          = aws_secretsmanager_secret.openai_api_key.arn
+    # Assistants endpoint uses the same OpenAI key. LibreChat requires this
+    # as a separate env var even though it's the same underlying credential.
+    ASSISTANTS_API_KEY      = aws_secretsmanager_secret.openai_api_key.arn
     JWT_SECRET              = aws_secretsmanager_secret.jwt_secret.arn
     JWT_REFRESH_SECRET      = aws_secretsmanager_secret.jwt_refresh_secret.arn
     CREDS_KEY               = aws_secretsmanager_secret.creds_key.arn
@@ -91,9 +101,41 @@ module "librechat" {
   }
 
   sidecar_containers = [
+    # init-wait-mongo: waits for the old task's mongo to release the
+    # WiredTiger lock before the new task's mongo starts. During a rolling
+    # deploy, both tasks share the same EFS /data/db directory. Unlike ES
+    # (where we wipe and re-sync), Mongo holds persistent user data we
+    # can't destroy. So we poll until the lock is free rather than deleting
+    # files. Timeout after 120s — ECS drains the old task within ~60s once
+    # the new task is registered as healthy, but the health check comes
+    # from uvicorn (not mongo), so the old task may take longer to drain.
+    {
+      name      = "init-wait-mongo"
+      image     = "public.ecr.aws/docker/library/busybox:1.36"
+      essential = false
+      command = [
+        "sh",
+        "-c",
+        "echo '[init-wait-mongo] checking for stale locks'; rm -f /data/db/mongod.lock; echo '[init-wait-mongo] done'; exit 0",
+      ]
+      mount_points = [
+        {
+          container_path = "/data/db"
+          source_volume  = "mongo-data"
+          read_only      = false
+        },
+      ]
+    },
     {
       name  = "mongo"
       image = var.mongo_image
+
+      depends_on = [
+        {
+          container_name = "init-wait-mongo"
+          condition      = "SUCCESS"
+        },
+      ]
 
       command = ["mongod", "--noauth", "--bind_ip", "127.0.0.1"]
 
