@@ -343,6 +343,8 @@ export const tMessageSchema = z.object({
   finish_reason: z.string().optional(),
   /* assistant */
   thread_id: z.string().optional(),
+  /* Responses API identifier (mutually exclusive with thread_id in Responses-mode chats) */
+  response_id: z.string().optional(),
   /* frontend components */
   iconURL: z.string().optional(),
 });

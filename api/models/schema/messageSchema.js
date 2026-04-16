@@ -111,6 +111,10 @@ const messageSchema = mongoose.Schema(
     thread_id: {
       type: String,
     },
+    /* Responses API (replaces thread_id for Responses-API chats) */
+    response_id: {
+      type: String,
+    },
     /* frontend components */
     iconURL: {
       type: String,

@@ -95,6 +95,24 @@ const createErrorHandler = ({ req, res, getContext, originPath = '/assistants/ch
       logger.error(`[${originPath}]`, error);
     }
 
+    const useResponsesAPI = process.env.USE_RESPONSES_API === 'true';
+
+    if (useResponsesAPI) {
+      // No server-side run to cancel / retrieve / reconcile. Surface the
+      // original error to the client and stop.
+      try {
+        await cache.delete(cacheKey);
+      } catch (cacheErr) {
+        logger.error(`[${originPath}] Error clearing cache`, cacheErr);
+      }
+      return sendResponse(
+        req,
+        res,
+        messageData,
+        error?.message ?? defaultErrorMessage,
+      );
+    }
+
     if (!openai || !thread_id || !run_id) {
       return sendResponse(req, res, messageData, defaultErrorMessage);
     }

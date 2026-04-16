@@ -131,6 +131,9 @@ export default function useChatFunctions({
       (msg) => msg.messageId === latestMessage?.parentMessageId,
     );
 
+    // thread_id may be undefined when the server is running the Responses API
+    // (no OpenAI threads). That is safe — the backend reconstructs history
+    // from MongoDB and a missing thread_id is tolerated downstream.
     let thread_id = parentMessage?.thread_id ?? latestMessage?.thread_id;
     if (!thread_id) {
       thread_id = currentMessages.find((message) => message.thread_id)?.thread_id;

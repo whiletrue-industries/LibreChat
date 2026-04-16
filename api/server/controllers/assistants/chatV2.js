@@ -16,12 +16,13 @@ const {
   saveUserMessage,
   addThreadMetadata,
   saveAssistantMessage,
+  buildConversationInput,
 } = require('~/server/services/Threads');
 const { runAssistant, createOnTextProgress } = require('~/server/services/AssistantService');
 const { sendMessage, sleep, isEnabled, countTokens } = require('~/server/utils');
 const { createErrorHandler } = require('~/server/controllers/assistants/errors');
 const validateAuthor = require('~/server/middleware/assistants/validateAuthor');
-const { createRun, StreamRunManager } = require('~/server/services/Runs');
+const { createRun, StreamRunManager, ResponseStreamManager } = require('~/server/services/Runs');
 const { addTitle } = require('~/server/services/Endpoints/assistants');
 const { getTransactions } = require('~/models/Transaction');
 const checkBalance = require('~/models/checkBalance');
@@ -85,6 +86,9 @@ const chatV2 = async (req, res) => {
   /** @type {string} - The conversation UUID - created if undefined */
   const conversationId = convoId ?? v4();
 
+  /** @type {boolean} Feature flag — use OpenAI Responses API instead of Assistants threads/runs. */
+  const useResponsesAPI = process.env.USE_RESPONSES_API === 'true';
+
   const cache = getLogStores(CacheKeys.ABORT_KEYS);
   const cacheKey = `${req.user.id}:${conversationId}`;
 
@@ -113,7 +117,7 @@ const chatV2 = async (req, res) => {
       }
     });
 
-    if (convoId && !_thread_id) {
+    if (!useResponsesAPI && convoId && !_thread_id) {
       completedRun = true;
       throw new Error('Missing thread_id for existing conversation');
     }
@@ -257,17 +261,24 @@ const chatV2 = async (req, res) => {
     const initializeThread = async () => {
       await getRequestFileIds();
 
-      // TODO: may allow multiple messages to be created beforehand in a future update
-      const initThreadBody = {
-        messages: [userMessage],
-        metadata: {
-          user: req.user.id,
-          conversationId,
-        },
-      };
+      if (useResponsesAPI) {
+        // Responses API is stateless — no thread to create/append to.
+        // Conversation continuation is reconstructed from MongoDB via
+        // buildConversationInput() at request time.
+        thread_id = undefined;
+      } else {
+        // TODO: may allow multiple messages to be created beforehand in a future update
+        const initThreadBody = {
+          messages: [userMessage],
+          metadata: {
+            user: req.user.id,
+            conversationId,
+          },
+        };
 
-      const result = await initThread({ openai, body: initThreadBody, thread_id });
-      thread_id = result.thread_id;
+        const result = await initThread({ openai, body: initThreadBody, thread_id });
+        thread_id = result.thread_id;
+      }
 
       createOnTextProgress({
         openai,
@@ -337,6 +348,94 @@ const chatV2 = async (req, res) => {
     let response;
 
     const processRun = async (retry = false) => {
+      if (useResponsesAPI) {
+        // Retrieve assistant-level config (instructions + tools) from OpenAI.
+        // Responses API has no server-side Assistant object, so we must
+        // supply these on every request.
+        const assistant = await openai.beta.assistants.retrieve(assistant_id);
+
+        // The Assistants API stores function tools as
+        //   { type: 'function', function: { name, description, parameters } }
+        // The Responses API expects the function fields flattened to the
+        // top level:
+        //   { type: 'function', name, description, parameters, strict }
+        //
+        // Non-function Assistants tools (code_interpreter, file_search,
+        // retrieval) aren't available / are shaped differently in the
+        // Responses API. For now, drop them — the bots that we care about
+        // in this migration only use function tools.
+        const responsesTools = (assistant.tools ?? [])
+          .map((tool) => {
+            if (tool?.type === 'function' && tool.function) {
+              return {
+                type: 'function',
+                name: tool.function.name,
+                description: tool.function.description,
+                parameters: tool.function.parameters,
+                strict: tool.function.strict ?? false,
+              };
+            }
+            // Drop code_interpreter/file_search/retrieval in Responses mode.
+            return null;
+          })
+          .filter(Boolean);
+
+        const effectiveBody = {
+          ...body,
+          model: body.model ?? assistant.model,
+          instructions: body.instructions ?? assistant.instructions ?? undefined,
+          tools: responsesTools,
+        };
+
+        // Build conversation history from MongoDB, then append this turn's user message.
+        const priorInput = await buildConversationInput(conversationId);
+        const messagesInput = [
+          ...priorInput,
+          { role: 'user', content: text },
+        ];
+
+        /** @type {undefined | TAssistantEndpoint} */
+        const config = req.app.locals[endpoint] ?? {};
+        /** @type {undefined | TBaseEndpoint} */
+        const allConfig = req.app.locals.all;
+
+        const responseStreamManager = new ResponseStreamManager({
+          req,
+          res,
+          openai,
+          handlers: {},
+          attachedFileIds,
+          parentMessageId: userMessageId,
+          responseMessage: openai.responseMessage,
+          streamRate: allConfig?.streamRate ?? config.streamRate,
+        });
+
+        // Send the initial sync response before streaming starts, so the client
+        // receives the placeholder responseMessage immediately.
+        await cache.set(cacheKey, `${conversationId}:${responseMessageId}`, ten_minutes);
+        sendInitialResponse();
+
+        await responseStreamManager.runResponse({
+          messages: messagesInput,
+          body: effectiveBody,
+        });
+
+        response = responseStreamManager;
+        response.text = responseStreamManager.intermediateText;
+        run_id = responseStreamManager.responseId;
+
+        const messageCache = getLogStores(CacheKeys.MESSAGES);
+        messageCache.set(
+          responseMessageId,
+          {
+            complete: true,
+            text: response.text,
+          },
+          Time.FIVE_MINUTES,
+        );
+        return;
+      }
+
       if (endpoint === EModelEndpoint.azureAssistants) {
         body.model = openai._options.model;
         openai.attachedFileIds = attachedFileIds;
@@ -447,6 +546,10 @@ const chatV2 = async (req, res) => {
       endpoint,
     };
 
+    if (useResponsesAPI && response.responseId) {
+      responseMessage.response_id = response.responseId;
+    }
+
     sendMessage(res, {
       final: true,
       conversation,
@@ -471,14 +574,27 @@ const chatV2 = async (req, res) => {
       });
     }
 
-    await addThreadMetadata({
-      openai,
-      thread_id,
-      messageId: responseMessage.messageId,
-      messages: response.messages,
-    });
+    if (!useResponsesAPI) {
+      await addThreadMetadata({
+        openai,
+        thread_id,
+        messageId: responseMessage.messageId,
+        messages: response.messages,
+      });
+    }
 
-    if (!response.run.usage) {
+    if (useResponsesAPI) {
+      // Responses API exposes usage directly on the response object captured
+      // into `response.run.usage`. No thread/run retrieval needed.
+      if (response.run?.usage) {
+        await recordUsage({
+          ...response.run.usage,
+          user: req.user.id,
+          model: response.run.model ?? model,
+          conversationId,
+        });
+      }
+    } else if (!response.run.usage) {
       await sleep(3000);
       completedRun = await openai.beta.threads.runs.retrieve(thread_id, response.run.id);
       if (completedRun.usage) {

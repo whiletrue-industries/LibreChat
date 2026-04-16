@@ -34,7 +34,8 @@ import store from '~/store';
 
 type TSyncData = {
   sync: boolean;
-  thread_id: string;
+  // Optional — undefined when the server runs the Responses API (no OpenAI threads).
+  thread_id?: string;
   messages?: TMessage[];
   requestMessage: TMessage;
   responseMessage: TMessage;

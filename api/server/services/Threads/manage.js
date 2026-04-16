@@ -38,6 +38,105 @@ async function initThread({ openai, body, thread_id: _thread_id }) {
 }
 
 /**
+ * Build the Responses API `input` array from the conversation history in MongoDB.
+ *
+ * The Responses API is stateless: every request needs the full conversation
+ * history included in the `input` field. This function loads prior messages
+ * for a conversation and converts them into the item format accepted by
+ * `openai.responses.create`.
+ *
+ * Messages authored by the user become `{ role: 'user', content: text }`.
+ * Assistant messages that contain function/tool calls are split into their
+ * constituent `function_call` + `function_call_output` items so the model
+ * can see the full tool-use history; assistant messages with plain text
+ * become `{ role: 'assistant', content: text }`.
+ *
+ * @param {string} conversationId - The LibreChat conversationId to reconstruct.
+ * @returns {Promise<Array<Object>>} The input array for `openai.responses.create`.
+ */
+async function buildConversationInput(conversationId) {
+  if (!conversationId) {
+    return [];
+  }
+
+  const dbMessages = await getMessages({ conversationId });
+  if (!dbMessages || dbMessages.length === 0) {
+    return [];
+  }
+
+  /** @type {Array<Object>} */
+  const input = [];
+
+  for (const msg of dbMessages) {
+    if (msg.isCreatedByUser) {
+      const text = typeof msg.text === 'string' ? msg.text : '';
+      if (text) {
+        input.push({ role: 'user', content: text });
+      }
+      continue;
+    }
+
+    // Assistant message. Check for stored content parts that may include
+    // tool_call content types. If present, reconstruct function_call items.
+    const contentParts = Array.isArray(msg.content) ? msg.content : [];
+    let hasToolCalls = false;
+    const toolCallItems = [];
+    const toolOutputItems = [];
+    let accumulatedText = '';
+
+    for (const part of contentParts) {
+      if (!part || typeof part !== 'object') {
+        continue;
+      }
+      const type = part.type;
+      if (type === ContentTypes.TEXT) {
+        const value = part[ContentTypes.TEXT]?.value ?? '';
+        if (value) {
+          accumulatedText += value;
+        }
+      } else if (type === ContentTypes.TOOL_CALL) {
+        const toolCall = part[ContentTypes.TOOL_CALL] ?? {};
+        const callId = toolCall.id;
+        const fn = toolCall.function ?? {};
+        if (!callId || !fn.name) {
+          continue;
+        }
+        hasToolCalls = true;
+        toolCallItems.push({
+          type: 'function_call',
+          call_id: callId,
+          name: fn.name,
+          arguments: typeof fn.arguments === 'string' ? fn.arguments : JSON.stringify(fn.arguments ?? {}),
+        });
+        const output = fn.output;
+        toolOutputItems.push({
+          type: 'function_call_output',
+          call_id: callId,
+          output:
+            typeof output === 'string'
+              ? output
+              : output == null
+                ? ''
+                : JSON.stringify(output),
+        });
+      }
+    }
+
+    if (hasToolCalls) {
+      // Tool-call items must come in pairs and precede any assistant text.
+      input.push(...toolCallItems, ...toolOutputItems);
+    }
+
+    const finalText = accumulatedText || (typeof msg.text === 'string' ? msg.text : '');
+    if (finalText) {
+      input.push({ role: 'assistant', content: finalText });
+    }
+  }
+
+  return input;
+}
+
+/**
  * Saves a user message to the DB in the Assistants endpoint format.
  *
  * @param {Object} req - The request object.
@@ -693,4 +792,5 @@ module.exports = {
   addThreadMetadata,
   mapMessagesToSteps,
   saveAssistantMessage,
+  buildConversationInput,
 };

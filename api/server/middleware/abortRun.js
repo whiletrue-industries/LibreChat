@@ -24,9 +24,37 @@ async function abortRun(req, res) {
     return res.status(400).send({ message: 'Invalid conversationId' });
   }
 
+  const useResponsesAPI = process.env.USE_RESPONSES_API === 'true';
+
   const cacheKey = `${req.user.id}:${conversationId}`;
   const cache = getLogStores(CacheKeys.ABORT_KEYS);
   const runValues = await cache.get(cacheKey);
+
+  if (useResponsesAPI) {
+    // Responses API has no server-side run to cancel. The HTTP stream is
+    // already closing (the frontend aborted the fetch); just mark the
+    // cache, clean up unfinished placeholder messages, and respond.
+    try {
+      await cache.set(cacheKey, 'cancelled', three_minutes);
+    } catch (error) {
+      logger.error('[abortRun] Error marking cache cancelled', error);
+    }
+    try {
+      await deleteMessages({
+        user: req.user.id,
+        unfinished: true,
+        conversationId,
+      });
+    } catch (error) {
+      logger.error('[abortRun] Error deleting unfinished messages', error);
+    }
+    const finalEvent = { final: true, conversation, runMessages: [] };
+    if (res.headersSent) {
+      return sendMessage(res, finalEvent);
+    }
+    return res.json(finalEvent);
+  }
+
   const [thread_id, run_id] = runValues.split(':');
 
   if (!run_id) {
