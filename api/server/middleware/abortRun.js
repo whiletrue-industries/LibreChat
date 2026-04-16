@@ -1,6 +1,4 @@
-const { CacheKeys, RunStatus, isUUID } = require('librechat-data-provider');
-const { initializeClient } = require('~/server/services/Endpoints/assistants');
-const { checkMessageGaps, recordUsage } = require('~/server/services/Threads');
+const { CacheKeys, isUUID } = require('librechat-data-provider');
 const { deleteMessages } = require('~/models/Message');
 const { getConvo } = require('~/models/Conversation');
 const getLogStores = require('~/cache/getLogStores');
@@ -9,10 +7,18 @@ const { logger } = require('~/config');
 
 const three_minutes = 1000 * 60 * 3;
 
+/**
+ * Abort an in-flight chat request.
+ *
+ * Under the Responses API there is no server-side run to cancel — the HTTP
+ * stream is already closing (the frontend aborted its fetch). We mark the
+ * cache, clean up any unfinished placeholder messages in MongoDB, and send
+ * a `final` event back to the client so the UI can stop listening.
+ */
 async function abortRun(req, res) {
   res.setHeader('Content-Type', 'application/json');
-  const { abortKey, endpoint } = req.body;
-  const [conversationId, latestMessageId] = abortKey.split(':');
+  const { abortKey } = req.body;
+  const [conversationId] = abortKey.split(':');
   const conversation = await getConvo(req.user.id, conversationId);
 
   if (conversation?.model) {
@@ -24,103 +30,29 @@ async function abortRun(req, res) {
     return res.status(400).send({ message: 'Invalid conversationId' });
   }
 
-  const useResponsesAPI = process.env.USE_RESPONSES_API === 'true';
-
   const cacheKey = `${req.user.id}:${conversationId}`;
   const cache = getLogStores(CacheKeys.ABORT_KEYS);
-  const runValues = await cache.get(cacheKey);
-
-  if (useResponsesAPI) {
-    // Responses API has no server-side run to cancel. The HTTP stream is
-    // already closing (the frontend aborted the fetch); just mark the
-    // cache, clean up unfinished placeholder messages, and respond.
-    try {
-      await cache.set(cacheKey, 'cancelled', three_minutes);
-    } catch (error) {
-      logger.error('[abortRun] Error marking cache cancelled', error);
-    }
-    try {
-      await deleteMessages({
-        user: req.user.id,
-        unfinished: true,
-        conversationId,
-      });
-    } catch (error) {
-      logger.error('[abortRun] Error deleting unfinished messages', error);
-    }
-    const finalEvent = { final: true, conversation, runMessages: [] };
-    if (res.headersSent) {
-      return sendMessage(res, finalEvent);
-    }
-    return res.json(finalEvent);
-  }
-
-  const [thread_id, run_id] = runValues.split(':');
-
-  if (!run_id) {
-    logger.warn('[abortRun] Couldn\'t find run for cancel request', { thread_id });
-    return res.status(204).send({ message: 'Run not found' });
-  } else if (run_id === 'cancelled') {
-    logger.warn('[abortRun] Run already cancelled', { thread_id });
-    return res.status(204).send({ message: 'Run already cancelled' });
-  }
-
-  let runMessages = [];
-  /** @type {{ openai: OpenAI }} */
-  const { openai } = await initializeClient({ req, res });
 
   try {
     await cache.set(cacheKey, 'cancelled', three_minutes);
-    const cancelledRun = await openai.beta.threads.runs.cancel(thread_id, run_id);
-    logger.debug('[abortRun] Cancelled run:', cancelledRun);
   } catch (error) {
-    logger.error('[abortRun] Error cancelling run', error);
-    if (
-      error?.message?.includes(RunStatus.CANCELLED) ||
-      error?.message?.includes(RunStatus.CANCELLING)
-    ) {
-      return res.end();
-    }
+    logger.error('[abortRun] Error marking cache cancelled', error);
   }
-
   try {
-    const run = await openai.beta.threads.runs.retrieve(thread_id, run_id);
-    await recordUsage({
-      ...run.usage,
-      model: run.model,
+    await deleteMessages({
       user: req.user.id,
+      unfinished: true,
       conversationId,
     });
   } catch (error) {
-    logger.error('[abortRun] Error fetching or processing run', error);
+    logger.error('[abortRun] Error deleting unfinished messages', error);
   }
 
-  /* TODO: a reconciling strategy between the existing intermediate message would be more optimal than deleting it */
-  await deleteMessages({
-    user: req.user.id,
-    unfinished: true,
-    conversationId,
-  });
-  runMessages = await checkMessageGaps({
-    openai,
-    run_id,
-    endpoint,
-    thread_id,
-    conversationId,
-    latestMessageId,
-  });
-
-  const finalEvent = {
-    final: true,
-    conversation,
-    runMessages,
-  };
-
-  if (res.headersSent && finalEvent) {
+  const finalEvent = { final: true, conversation, runMessages: [] };
+  if (res.headersSent) {
     return sendMessage(res, finalEvent);
   }
-
-  res.json(finalEvent);
+  return res.json(finalEvent);
 }
 
 module.exports = {

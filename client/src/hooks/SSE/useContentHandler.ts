@@ -29,13 +29,10 @@ export default function useContentHandler({ setMessages, getMessages }: TUseCont
   const messageMap = useMemo(() => new Map<string, TMessage>(), []);
   return useCallback(
     ({ data, submission }: TContentHandler) => {
-      const { type, messageId, thread_id, conversationId, index } = data;
+      const { type, messageId, conversationId, index } = data;
 
       const _messages = getMessages();
-      const messages =
-        _messages
-          ?.filter((m) => m.messageId !== messageId)
-          ?.map((msg) => ({ ...msg, thread_id })) ?? [];
+      const messages = _messages?.filter((m) => m.messageId !== messageId) ?? [];
       const userMessage = messages[messages.length - 1] as TMessage | undefined;
 
       const { initialResponse } = submission;
@@ -47,7 +44,6 @@ export default function useContentHandler({ setMessages, getMessages }: TUseCont
           parentMessageId: userMessage?.messageId ?? '',
           conversationId,
           messageId,
-          thread_id,
         };
         messageMap.set(messageId, response);
       }
