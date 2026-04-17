@@ -12,7 +12,6 @@ const {
   recordUsage,
   saveUserMessage,
   saveAssistantMessage,
-  getOrCreateOpenAIConversation,
 } = require('~/server/services/Threads');
 const { createOnTextProgress } = require('~/server/services/AssistantService');
 const { sendMessage, isEnabled, countTokens } = require('~/server/utils');
@@ -38,17 +37,15 @@ const ten_minutes = 1000 * 60 * 10;
  * The Assistants API chat path (threads/runs) was removed as part of the
  * Responses-API migration; the Assistants API retires 2026-08-26.
  *
- * Conversation context is held server-side by the OpenAI Conversations API:
- * on the first turn we call `getOrCreateOpenAIConversation` which creates a
- * `conv_…` and persists the mapping on the LibreChat conversation document.
- * On every subsequent turn we pass that id as the `conversation` parameter
- * to `responses.create` and only send the new user message as `input` —
- * OpenAI prepends all prior items for us.
+ * Each user turn runs `responses.create` **without** a `conversation:` field
+ * — stateless per question. This matches the Botnim bot design (system
+ * prompts forbid cross-turn memory) and avoids prompt-size blowup from
+ * OpenAI's Conversations API replaying large tool outputs across turns.
+ * LibreChat's UI history is unaffected (served from MongoDB as always).
  *
- * NOTE: `openai.beta.assistants.retrieve()` is still used here to fetch the
- * model, instructions, and tool definitions configured for an assistant.
- * That Assistants *management* call will be migrated to the Prompts API in
- * a follow-up task.
+ * If cross-turn continuity ever becomes a product requirement, hydrate the
+ * last N MongoDB messages into the `messagesInput` array instead of
+ * re-introducing Conversations — same UX without the replay cost.
  *
  * @access Public
  * @param {Express.Request} req - The request object, containing the request data.
@@ -367,20 +364,17 @@ const chatV2 = async (req, res) => {
         effectiveBody.temperature = botConfig.temperature;
       }
 
-      // Resolve (or create) the OpenAI Conversations API conversation for
-      // this LibreChat conversation. On a brand-new conversation the
-      // helper seeds OpenAI with any prior MongoDB history; on
-      // continuations it just returns the stored mapping. After this,
-      // OpenAI holds the authoritative context and we only send the new
-      // turn's user message as `input`.
-      const { openai_conversation_id } = await getOrCreateOpenAIConversation({
-        openai,
-        conversationId,
-        userId: req.user.id,
-      });
-
-      // Only the new user message needs to be sent this turn — OpenAI
-      // prepends the conversation's prior items server-side.
+      // Stateless mode: each user turn runs `responses.create` without a
+      // `conversation:` field. OpenAI doesn't retain any server-side history
+      // between turns — which is the intended behavior for Botnim bots (see
+      // system prompts; each question is answered in isolation). This avoids
+      // the runaway prompt-size growth caused by Conversations-API context
+      // replay, where large tool outputs accumulated into 100k+ token prompts
+      // and triggered TPM rate limits on gpt-5.4-mini.
+      //
+      // Within a single user turn the tool-call follow-up loop still echoes
+      // function_call + function_call_output items in the stateless branch of
+      // ResponseStreamManager._executePendingToolCalls — unchanged.
       const messagesInput = [{ role: 'user', content: text }];
 
       /** @type {undefined | TAssistantEndpoint} */
@@ -397,7 +391,6 @@ const chatV2 = async (req, res) => {
         parentMessageId: userMessageId,
         responseMessage: openai.responseMessage,
         streamRate: allConfig?.streamRate ?? config.streamRate,
-        openaiConversationId: openai_conversation_id,
       });
 
       // Send the initial sync response before streaming starts, so the client

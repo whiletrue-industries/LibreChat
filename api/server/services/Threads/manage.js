@@ -5,212 +5,28 @@ const {
   AnnotationTypes,
 } = require('librechat-data-provider');
 const { retrieveAndProcessFile } = require('~/server/services/Files/process');
-const { recordMessage, getMessages } = require('~/models/Message');
+const { recordMessage } = require('~/models/Message');
 const { spendTokens } = require('~/models/spendTokens');
 const { saveConvo } = require('~/models/Conversation');
 const { countTokens } = require('~/server/utils');
 
-/**
- * Build the Responses API `input` array from the conversation history in MongoDB.
- *
- * The Responses API is stateless (when `conversation` is not used): every
- * request needs the full conversation history included in the `input`
- * field. This function loads prior messages for a conversation and converts
- * them into the item format accepted by `openai.responses.create`.
- *
- * Messages authored by the user become `{ role: 'user', content: text }`.
- * Assistant messages that contain function/tool calls are split into their
- * constituent `function_call` + `function_call_output` items so the model
- * can see the full tool-use history; assistant messages with plain text
- * become `{ role: 'assistant', content: text }`.
- *
- * NOTE: This function is used as a fallback. The preferred code path uses
- * the OpenAI Conversations API (see `getOrCreateOpenAIConversation`) which
- * lets OpenAI persist context server-side. `buildConversationInput` stays
- * here for seeding freshly-created Conversations with any prior MongoDB
- * history (e.g., when upgrading an existing DB to the Conversations path).
- *
- * @param {string} conversationId - The LibreChat conversationId to reconstruct.
- * @returns {Promise<Array<Object>>} The input array for `openai.responses.create`.
- */
-async function buildConversationInput(conversationId) {
-  if (!conversationId) {
-    return [];
-  }
-
-  const dbMessages = await getMessages({ conversationId });
-  if (!dbMessages || dbMessages.length === 0) {
-    return [];
-  }
-
-  /** @type {Array<Object>} */
-  const input = [];
-
-  for (const msg of dbMessages) {
-    if (msg.isCreatedByUser) {
-      const text = typeof msg.text === 'string' ? msg.text : '';
-      if (text) {
-        input.push({ role: 'user', content: text });
-      }
-      continue;
-    }
-
-    // Assistant message. Check for stored content parts that may include
-    // tool_call content types. If present, reconstruct function_call items.
-    const contentParts = Array.isArray(msg.content) ? msg.content : [];
-    let hasToolCalls = false;
-    const toolCallItems = [];
-    const toolOutputItems = [];
-    let accumulatedText = '';
-
-    for (const part of contentParts) {
-      if (!part || typeof part !== 'object') {
-        continue;
-      }
-      const type = part.type;
-      if (type === ContentTypes.TEXT) {
-        const value = part[ContentTypes.TEXT]?.value ?? '';
-        if (value) {
-          accumulatedText += value;
-        }
-      } else if (type === ContentTypes.TOOL_CALL) {
-        const toolCall = part[ContentTypes.TOOL_CALL] ?? {};
-        const callId = toolCall.id;
-        const fn = toolCall.function ?? {};
-        if (!callId || !fn.name) {
-          continue;
-        }
-        hasToolCalls = true;
-        toolCallItems.push({
-          type: 'function_call',
-          call_id: callId,
-          name: fn.name,
-          arguments: typeof fn.arguments === 'string' ? fn.arguments : JSON.stringify(fn.arguments ?? {}),
-        });
-        const output = fn.output;
-        toolOutputItems.push({
-          type: 'function_call_output',
-          call_id: callId,
-          output:
-            typeof output === 'string'
-              ? output
-              : output == null
-                ? ''
-                : JSON.stringify(output),
-        });
-      }
-    }
-
-    if (hasToolCalls) {
-      // Tool-call items must come in pairs and precede any assistant text.
-      input.push(...toolCallItems, ...toolOutputItems);
-    }
-
-    const finalText = accumulatedText || (typeof msg.text === 'string' ? msg.text : '');
-    if (finalText) {
-      input.push({ role: 'assistant', content: finalText });
-    }
-  }
-
-  return input;
-}
-
-/**
- * Look up (or create) the OpenAI Conversations API conversation id mapped to
- * a given LibreChat conversationId.
- *
- * The OpenAI Conversations API (`POST /conversations`, `POST /conversations/:id/items`)
- * replaces the old Assistants threads. We persist the OpenAI-side id on the
- * LibreChat conversation document as `openai_conversation_id` and pass it
- * as the `conversation` parameter to `responses.create`, which makes OpenAI
- * store and retrieve context server-side automatically.
- *
- * On a brand-new conversation we seed the OpenAI Conversation with any
- * prior MongoDB messages (usually none) so new clients that started
- * chatting before the migration don't lose their history.
- *
- * @param {Object} params
- * @param {OpenAIClient} params.openai - Authenticated OpenAI client (v4 SDK).
- * @param {string} params.conversationId - LibreChat conversation id.
- * @param {string} params.userId - The requesting user's id (for Mongo scoping).
- * @returns {Promise<{ openai_conversation_id: string, created: boolean }>}
- */
-async function getOrCreateOpenAIConversation({ openai, conversationId, userId }) {
-  // We resolve the existing mapping via the conversation document in Mongo.
-  // Require at call-time to avoid a circular require with models/Conversation.
-  const { Conversation } = require('~/models/Conversation');
-
-  const existing = await Conversation.findOne(
-    { conversationId, user: userId },
-    'openai_conversation_id',
-  ).lean();
-
-  if (existing?.openai_conversation_id) {
-    return {
-      openai_conversation_id: existing.openai_conversation_id,
-      created: false,
-    };
-  }
-
-  // Seed the new OpenAI Conversation with any prior history. On a brand-new
-  // chat the array will be empty, which is fine.
-  const seedItems = await buildConversationInput(conversationId);
-
-  // v4 SDK: use the generic `post` helper because
-  // `openai.conversations.*` typed resources land in v5.15+.
-  const created = await openai.post('/conversations', {
-    body: {
-      metadata: { librechat_conversation_id: conversationId },
-      ...(seedItems.length ? { items: seedItems } : {}),
-    },
-  });
-
-  if (!created?.id) {
-    throw new Error(
-      `[getOrCreateOpenAIConversation] OpenAI Conversations API returned no id for ${conversationId}`,
-    );
-  }
-
-  // Persist the mapping. Use updateOne so we don't overwrite concurrent edits.
-  await Conversation.updateOne(
-    { conversationId, user: userId },
-    { $set: { openai_conversation_id: created.id } },
-    { upsert: true },
-  );
-
-  return {
-    openai_conversation_id: created.id,
-    created: true,
-  };
-}
-
-/**
- * Append items (user message, tool calls, tool outputs, etc.) to an existing
- * OpenAI Conversation. Safe to call in a fire-and-forget manner when the
- * caller only cares about the network side-effect.
- *
- * @param {Object} params
- * @param {OpenAIClient} params.openai - Authenticated OpenAI client.
- * @param {string} params.openai_conversation_id - The OpenAI conversation id.
- * @param {Array<Object>} params.items - Items to append.
- * @returns {Promise<unknown>}
- */
-async function appendItemsToOpenAIConversation({ openai, openai_conversation_id, items }) {
-  if (!openai_conversation_id || !items?.length) {
-    return null;
-  }
-  return openai.post(`/conversations/${openai_conversation_id}/items`, {
-    body: { items },
-  });
-}
+// Previously this file exported `buildConversationInput`,
+// `getOrCreateOpenAIConversation`, and `appendItemsToOpenAIConversation`,
+// which maintained an OpenAI Conversations-API conversation per LibreChat
+// conversation. That path was removed: OpenAI replayed the full
+// server-side history (including large tool outputs) into every
+// `responses.create` call, driving per-request prompt size into the 100k+
+// token range and triggering gpt-5.4-mini TPM rate limits. Botnim bots
+// are memoryless per question (system prompts forbid cross-turn memory),
+// so stateless is the correct design. LibreChat's UI history continues
+// to render from MongoDB.
 
 /**
  * Saves a user message to the DB in the Assistants endpoint format.
  *
  * NOTE: `thread_id` is no longer persisted — the Assistants threads/runs
- * path was removed with the Responses API migration. The
- * `openai_conversation_id` linkage lives on the conversation document,
- * not on each message.
+ * path was removed with the Responses API migration, and each
+ * `responses.create` is stateless (no Conversations-API linkage either).
  *
  * @param {Object} req - The request object.
  * @param {Object} params - The parameters of the user message
@@ -509,7 +325,4 @@ module.exports = {
   processMessages,
   saveUserMessage,
   saveAssistantMessage,
-  buildConversationInput,
-  getOrCreateOpenAIConversation,
-  appendItemsToOpenAIConversation,
 };
