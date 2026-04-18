@@ -62,75 +62,22 @@ module "librechat" {
     MEILI_HOST     = "http://localhost:7700"
     SEARCH         = "true"
     RAG_API_URL    = ""
-    # Call botnim-api via Service Connect (in-VPC) rather than the public
-    # ALB. The public hairpin from a NAT'd private subnet back to the same
-    # internet-facing ALB was failing with undici "fetch failed" on every
-    # BotConfigService prefetch. Service Connect resolves `botnim-api` to
-    # the task's private IPs directly. If var.botnim_api_url is set
-    # (e.g. for manual override), it still wins.
-    BOTNIM_API_URL = coalesce(var.botnim_api_url, "http://botnim-api:8000")
 
-    # Show only the Assistants endpoint (the Botnim bots). Without this,
-    # LibreChat also shows raw "OpenAI" and "Plugins" endpoints which use
-    # vanilla GPT-4 with no tools — not what users expect.
-    ENDPOINTS = "assistants"
-
-    # Restrict the assistants menu to just the unified bot so the UI
-    # auto-selects it on load. The listing is filtered server-side in
-    # controllers/assistants/helpers.js before the admin bypass, so this
-    # applies to every user. Staging's unified assistant ID ("- פיתוח"
-    # suffix); prod has its own ID that needs a separate override.
-    ASSISTANT_SUPPORTED_IDS = "asst_Dr24jZHHB1Vurjhq0HanWVaQ"
-
-    # BotConfig endpoint wiring (post Assistants-API migration). LibreChat's
-    # BotConfigService fetches GET ${BOTNIM_API}/botnim/config/<bot>?environment=<env>
-    # at request time and passes the returned {model, instructions, tools}
-    # directly to client.responses.create(...). Replaces the old
-    # openai.beta.assistants.retrieve() path.
-    # BotConfigService expects the URL to include the /botnim path prefix
-    # when calling a shared-host ALB (the ALB routes /botnim/* to botnim-api
-    # and /* to librechat). The magic regex in BotConfigService only adds
-    # the prefix for local Docker (nginx hostnames); for staging we provide
-    # it explicitly.
-    BOTNIM_API         = "${coalesce(var.botnim_api_url, "http://botnim-api:8000")}/botnim"
-    BOTNIM_BOT_SLUG    = "unified"
-    BOTNIM_ENVIRONMENT = var.environment
-
-    # Bootstrap admin user on first boot.
-    #
-    # The entrypoint runs `node config/create-default-user.js` when
-    # CREATE_BOOTSTRAP_USER=true. It is idempotent: if any user already
-    # exists the script exits 0 without touching Mongo. We leave this set
-    # permanently — the overhead is a single count() per cold start and
-    # it means "was this user ever created?" has a trivially-true answer.
-    #
-    # Set the password in Secrets Manager OUT OF BAND (terraform only
-    # creates the empty secret resource). For staging:
-    #   AWS_PROFILE=anubanu-staging aws secretsmanager put-secret-value \
-    #     --secret-id librechat/staging/bootstrap-user-password \
-    #     --secret-string '<strong-password>'
-    # Then trigger a new deploy (workflow_dispatch on Deploy Staging or
-    # `terragrunt apply` + `aws ecs update-service --force-new-deployment`).
-    #
-    # To create additional users after the bootstrap: either ship the
-    # OpenID/Keycloak integration (Monday task #2844301706), or flip
-    # ALLOW_REGISTRATION=true temporarily, register via /register, flip back.
-    CREATE_BOOTSTRAP_USER = "true"
-    BOOTSTRAP_USER_EMAIL  = "botnim.staging.admin@build-up.team"
-    BOOTSTRAP_USER_NAME   = "Botnim Staging Admin"
+    # Enable the Agents endpoint only. Upstream v0.8.4 ships OpenAI /
+    # custom / assistants / agents; we only need agents for the Botnim
+    # bot. The Botnim agent is created at runtime by the seed script —
+    # see LibreChat/scripts/seed-botnim-agent.js and the one-time setup
+    # documented in BOTNIM_BOOTSTRAP.md.
+    ENDPOINTS = "agents"
   }
 
   secret_environment_variables = {
-    OPENAI_API_KEY          = aws_secretsmanager_secret.openai_api_key.arn
-    # Assistants endpoint uses the same OpenAI key. LibreChat requires this
-    # as a separate env var even though it's the same underlying credential.
-    ASSISTANTS_API_KEY      = aws_secretsmanager_secret.openai_api_key.arn
-    JWT_SECRET              = aws_secretsmanager_secret.jwt_secret.arn
-    JWT_REFRESH_SECRET      = aws_secretsmanager_secret.jwt_refresh_secret.arn
-    CREDS_KEY               = aws_secretsmanager_secret.creds_key.arn
-    CREDS_IV                = aws_secretsmanager_secret.creds_iv.arn
-    MEILI_MASTER_KEY        = aws_secretsmanager_secret.meili_master_key.arn
-    BOOTSTRAP_USER_PASSWORD = aws_secretsmanager_secret.bootstrap_user_password.arn
+    OPENAI_API_KEY     = aws_secretsmanager_secret.openai_api_key.arn
+    JWT_SECRET         = aws_secretsmanager_secret.jwt_secret.arn
+    JWT_REFRESH_SECRET = aws_secretsmanager_secret.jwt_refresh_secret.arn
+    CREDS_KEY          = aws_secretsmanager_secret.creds_key.arn
+    CREDS_IV           = aws_secretsmanager_secret.creds_iv.arn
+    MEILI_MASTER_KEY   = aws_secretsmanager_secret.meili_master_key.arn
   }
 
   sidecar_containers = [

@@ -27,6 +27,15 @@ function getTextSizeClass(text: string | undefined | null) {
   return 'text-lg sm:text-md';
 }
 
+// `SplitText` animates each character in its own LTR span, which
+// reverses visually for RTL scripts (Hebrew/Arabic). Detect whether the
+// landing text is RTL so we can render it as a plain heading instead.
+function isRtlText(text: string | undefined | null) {
+  if (!text) return false;
+  // Hebrew (0590-05FF), Arabic (0600-06FF, 0750-077F, FB50-FDFF, FE70-FEFF).
+  return /[\u0590-\u05FF\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF]/.test(text);
+}
+
 export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: boolean }) {
   const { conversation } = useChatContext();
   const agentsMap = useAgentsMapContext();
@@ -168,20 +177,36 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
           </div>
           {((isAgent || isAssistant) && name) || name ? (
             <div className="flex flex-col items-center gap-0 p-2">
-              <SplitText
-                key={`split-text-${name}`}
-                text={name}
-                className={`${getTextSizeClass(name)} font-medium text-text-primary`}
-                delay={50}
-                textAlign="center"
-                animationFrom={{ opacity: 0, transform: 'translate3d(0,50px,0)' }}
-                animationTo={{ opacity: 1, transform: 'translate3d(0,0,0)' }}
-                easing={easings.easeOutCubic}
-                threshold={0}
-                rootMargin="0px"
-                onLineCountChange={handleLineCountChange}
-              />
+              {isRtlText(name) ? (
+                <h1
+                  dir="rtl"
+                  className={`${getTextSizeClass(name)} animate-fadeIn font-medium text-text-primary`}
+                >
+                  {name}
+                </h1>
+              ) : (
+                <SplitText
+                  key={`split-text-${name}`}
+                  text={name}
+                  className={`${getTextSizeClass(name)} font-medium text-text-primary`}
+                  delay={50}
+                  textAlign="center"
+                  animationFrom={{ opacity: 0, transform: 'translate3d(0,50px,0)' }}
+                  animationTo={{ opacity: 1, transform: 'translate3d(0,0,0)' }}
+                  easing={easings.easeOutCubic}
+                  threshold={0}
+                  rootMargin="0px"
+                  onLineCountChange={handleLineCountChange}
+                />
+              )}
             </div>
+          ) : isRtlText(greetingText) ? (
+            <h1
+              dir="rtl"
+              className={`${getTextSizeClass(greetingText)} animate-fadeIn font-medium text-text-primary`}
+            >
+              {greetingText}
+            </h1>
           ) : (
             <SplitText
               key={`split-text-${greetingText}${user?.name ? '-user' : ''}`}
