@@ -1,7 +1,7 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { logger } = require('@librechat/data-schemas');
-const { ContentTypes } = require('librechat-data-provider');
+const { ContentTypes, SystemRoles } = require('librechat-data-provider');
 const { unescapeLaTeX, countTokens } = require('@librechat/api');
 const {
   saveConvo,
@@ -18,6 +18,91 @@ const { Message } = require('~/db/models');
 
 const router = express.Router();
 router.use(requireJwtAuth);
+
+/**
+ * GET /api/messages/feedback/analytics — admin-only
+ * Aggregates assistant-message feedback across the whole deployment.
+ * Returns totals, positive rate, and a per-endpoint breakdown.
+ * Query params:
+ *   since  ISO date string, lower bound on createdAt (inclusive). Optional.
+ *   until  ISO date string, upper bound on createdAt (exclusive). Optional.
+ */
+router.get('/feedback/analytics', async (req, res) => {
+  if (req.user.role !== SystemRoles.ADMIN) {
+    return res.status(403).json({ error: 'Admin role required' });
+  }
+  try {
+    const match = { isCreatedByUser: false };
+    const { since, until } = req.query;
+    if (since || until) {
+      match.createdAt = {};
+      if (since) {
+        match.createdAt.$gte = new Date(since);
+      }
+      if (until) {
+        match.createdAt.$lt = new Date(until);
+      }
+    }
+    const rows = await Message.aggregate([
+      { $match: match },
+      {
+        $group: {
+          _id: { $ifNull: ['$endpoint', 'unknown'] },
+          total: { $sum: 1 },
+          withFeedback: {
+            $sum: { $cond: [{ $ifNull: ['$feedback', false] }, 1, 0] },
+          },
+          thumbsUp: {
+            $sum: { $cond: [{ $eq: ['$feedback.rating', 'thumbsUp'] }, 1, 0] },
+          },
+          thumbsDown: {
+            $sum: { $cond: [{ $eq: ['$feedback.rating', 'thumbsDown'] }, 1, 0] },
+          },
+        },
+      },
+      { $sort: { total: -1 } },
+    ]);
+
+    const totals = rows.reduce(
+      (acc, r) => ({
+        total: acc.total + r.total,
+        withFeedback: acc.withFeedback + r.withFeedback,
+        thumbsUp: acc.thumbsUp + r.thumbsUp,
+        thumbsDown: acc.thumbsDown + r.thumbsDown,
+      }),
+      { total: 0, withFeedback: 0, thumbsUp: 0, thumbsDown: 0 },
+    );
+
+    const pct = (n, d) => (d === 0 ? null : Math.round((n / d) * 10000) / 100);
+
+    const byEndpoint = rows.map((r) => ({
+      endpoint: r._id,
+      total: r.total,
+      withFeedback: r.withFeedback,
+      feedbackRate: pct(r.withFeedback, r.total),
+      thumbsUp: r.thumbsUp,
+      thumbsDown: r.thumbsDown,
+      positivePct: pct(r.thumbsUp, r.withFeedback),
+    }));
+
+    res.status(200).json({
+      since: since || null,
+      until: until || null,
+      totals: {
+        assistantMessages: totals.total,
+        withFeedback: totals.withFeedback,
+        feedbackRate: pct(totals.withFeedback, totals.total),
+        thumbsUp: totals.thumbsUp,
+        thumbsDown: totals.thumbsDown,
+        positivePct: pct(totals.thumbsUp, totals.withFeedback),
+      },
+      byEndpoint,
+    });
+  } catch (error) {
+    logger.error('Error aggregating feedback analytics:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 router.get('/', async (req, res) => {
   try {

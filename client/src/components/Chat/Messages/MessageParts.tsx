@@ -32,6 +32,7 @@ export default function Message(props: TMessageProps) {
     handleScroll,
     conversation,
     isSubmitting,
+    handleFeedback,
     latestMessageId,
     handleContinue,
     copyToClipboard,
@@ -169,6 +170,7 @@ export default function Message(props: TMessageProps) {
                       copyToClipboard={copyToClipboard}
                       handleContinue={handleContinue}
                       latestMessageId={latestMessageId}
+                      handleFeedback={handleFeedback}
                       isLast={isLast}
                     />
                   </SubRow>

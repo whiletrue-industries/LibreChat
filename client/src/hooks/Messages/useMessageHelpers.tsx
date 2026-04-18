@@ -1,6 +1,14 @@
-import { useEffect, useRef, useCallback, useMemo } from 'react';
+import { useEffect, useRef, useCallback, useMemo, useState } from 'react';
 import throttle from 'lodash/throttle';
-import { Constants, isAssistantsEndpoint, isAgentsEndpoint } from 'librechat-data-provider';
+import { useUpdateFeedbackMutation } from 'librechat-data-provider/react-query';
+import {
+  Constants,
+  getTagByKey,
+  toMinimalFeedback,
+  isAssistantsEndpoint,
+  isAgentsEndpoint,
+} from 'librechat-data-provider';
+import type { TFeedback, TUpdateFeedbackRequest } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
 import { useMessagesViewContext, useAssistantsMapContext, useAgentsMapContext } from '~/Providers';
 import { getTextKey, TEXT_KEY_DIVIDER, logger } from '~/utils';
@@ -130,17 +138,62 @@ export default function useMessageHelpers(props: TMessageProps) {
 
   const copyToClipboard = useCopyToClipboard({ text, content });
 
+  const [feedback, setFeedback] = useState<TFeedback | undefined>(() => {
+    if (message?.feedback) {
+      const tag = getTagByKey(message.feedback?.tag?.key);
+      return {
+        rating: message.feedback.rating,
+        tag,
+        text: message.feedback.text,
+      };
+    }
+    return undefined;
+  });
+
+  const feedbackMutation = useUpdateFeedbackMutation(
+    conversation?.conversationId || '',
+    message?.messageId || '',
+  );
+
+  const handleFeedback = useCallback(
+    ({ feedback: newFeedback }: { feedback: TFeedback | undefined }) => {
+      const payload: TUpdateFeedbackRequest = {
+        feedback: newFeedback ? toMinimalFeedback(newFeedback) : undefined,
+      };
+      feedbackMutation.mutate(payload, {
+        onSuccess: (data) => {
+          if (!data.feedback) {
+            setFeedback(undefined);
+          } else {
+            const tag = getTagByKey(data.feedback?.tag ?? undefined);
+            setFeedback({
+              rating: data.feedback.rating,
+              tag,
+              text: data.feedback.text,
+            });
+          }
+        },
+        onError: (error) => {
+          console.error('Failed to update feedback:', error);
+        },
+      });
+    },
+    [feedbackMutation],
+  );
+
   return {
     ask,
     edit,
     agent,
     index,
     isLast,
+    feedback,
     assistant,
     enterEdit,
     conversation,
     isSubmitting,
     handleScroll,
+    handleFeedback,
     handleContinue,
     latestMessageId,
     copyToClipboard,
