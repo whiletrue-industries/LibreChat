@@ -1,0 +1,4 @@
+FROM librechat:v0.8.4-botnim-login-fixed
+RUN sed -i 's/com_ui_privacy_policy:"Privacy policy"/com_ui_privacy_policy:"מדיניות הפרטיות"/; s/com_ui_terms_of_service:"Terms of service"/com_ui_terms_of_service:"תנאי השימוש באתר"/' /app/client/dist/assets/locales.*.js && \
+    rm -f /app/client/dist/assets/locales.*.js.br /app/client/dist/assets/locales.*.js.gz && \
+    gzip -9 -k /app/client/dist/assets/locales.*.js

@@ -9,9 +9,10 @@ terraform {
 inputs = {
   environment = "staging"
 
-  # Pin image_tag so terragrunt apply doesn't reset it to the `bootstrap`
-  # default and hand ECS a tag that doesn't exist in ECR. Deploy pipelines
-  # override this on each run; this is the last-known-good for ad-hoc
-  # terragrunt applies (like service-connect infra changes).
-  image_tag = "920296e0"
+  # Pinned to mainstream LibreChat v0.8.4. The image at
+  # 377114444836.dkr.ecr.il-central-1.amazonaws.com/librechat:v0.8.4
+  # is a mirror of ghcr.io/danny-avila/librechat:v0.8.4. Bump this
+  # when cutting over to a new upstream release after validating on
+  # this branch.
+  image_tag = "v0.8.4-botnim-login-he"
 }

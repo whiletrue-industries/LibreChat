@@ -1,0 +1,3 @@
+FROM --platform=linux/amd64 377114444836.dkr.ecr.il-central-1.amazonaws.com/librechat:v0.8.4
+COPY staging-dist/ /app/client/dist/
+COPY librechat.yaml /app/librechat.yaml
