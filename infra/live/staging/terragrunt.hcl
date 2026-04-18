@@ -14,5 +14,5 @@ inputs = {
   # is a mirror of ghcr.io/danny-avila/librechat:v0.8.4. Bump this
   # when cutting over to a new upstream release after validating on
   # this branch.
-  image_tag = "v0.8.4-botnim-login-he"
+  image_tag = "v0.8.4-botnim-login-he-fb1"
 }
