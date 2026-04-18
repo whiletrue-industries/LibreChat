@@ -90,6 +90,49 @@ class ResponseStreamManager {
   }
 
   /**
+   * Stream a short-lived "status" bubble for an in-progress retry
+   * attempt. Piggybacks on the tool-call content type so the UI shows
+   * it the same way it shows `Ran search_*` bubbles — small, collapsed
+   * by default, visible in chat history. One card per attempt makes
+   * the retry sequence explicit (e.g. three 429 retries render as three
+   * stacked cards before the final response streams in).
+   *
+   * Intentionally does NOT add the status to this.run's tool_calls or
+   * to openai.responseMessage.toolCalls; it's pure UI feedback and
+   * shouldn't end up in persistence or token accounting.
+   *
+   * @param {Object} params
+   * @param {number} params.attempt - 0-indexed retry attempt number.
+   * @param {number} params.delayMs - How long we're about to wait.
+   * @param {string} [params.reason='rate_limit']
+   * @returns {Promise<void>}
+   */
+  async emitRetryNotice({ attempt, delayMs, reason = 'rate_limit' }) {
+    const stepKey = `retry_notice_${attempt}`;
+    const index = this.getStepIndex(stepKey);
+    const toolCall = {
+      id: `retry_${attempt}_${Date.now()}`,
+      type: ToolCallTypes.FUNCTION,
+      function: {
+        name: 'rate_limit_retry',
+        arguments: JSON.stringify({
+          attempt: attempt + 1,
+          waiting_ms: delayMs,
+          reason,
+        }),
+        output: `Waiting ${Math.round(delayMs / 100) / 10}s before retrying (attempt ${attempt + 1})…`,
+      },
+      progress: 1,
+    };
+    this.orderedRunSteps.set(index, toolCall);
+    await this.addContentData({
+      [ContentTypes.TOOL_CALL]: toolCall,
+      type: ContentTypes.TOOL_CALL,
+      index,
+    });
+  }
+
+  /**
    * Sends content data to the client via SSE.
    *
    * @param {StreamContentData} data

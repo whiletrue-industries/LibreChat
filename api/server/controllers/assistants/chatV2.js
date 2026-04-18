@@ -12,7 +12,14 @@ const {
   recordUsage,
   saveUserMessage,
   saveAssistantMessage,
+  hydrateRecentHistory,
 } = require('~/server/services/Threads');
+const {
+  isContextLengthError,
+  isRateLimitError,
+  retryOnRateLimit,
+  buildRecap,
+} = require('~/server/services/Threads/oversizedConversation');
 const { createOnTextProgress } = require('~/server/services/AssistantService');
 const { sendMessage, isEnabled, countTokens } = require('~/server/utils');
 const { createErrorHandler } = require('~/server/controllers/assistants/errors');
@@ -37,15 +44,25 @@ const ten_minutes = 1000 * 60 * 10;
  * The Assistants API chat path (threads/runs) was removed as part of the
  * Responses-API migration; the Assistants API retires 2026-08-26.
  *
- * Each user turn runs `responses.create` **without** a `conversation:` field
- * — stateless per question. This matches the Botnim bot design (system
- * prompts forbid cross-turn memory) and avoids prompt-size blowup from
- * OpenAI's Conversations API replaying large tool outputs across turns.
- * LibreChat's UI history is unaffected (served from MongoDB as always).
+ * Each user turn runs `responses.create` **without** a `conversation:`
+ * field — we don't use the OpenAI Conversations API. Continuity across
+ * turns comes from hydrating the ENTIRE MongoDB history (user +
+ * assistant text, tool-call items excluded) into the `input` array via
+ * `hydrateRecentHistory`. No length cap is applied.
  *
- * If cross-turn continuity ever becomes a product requirement, hydrate the
- * last N MongoDB messages into the `messagesInput` array instead of
- * re-introducing Conversations — same UX without the replay cost.
+ * Two failure modes we handle explicitly:
+ * - **Rate limit (HTTP 429 / TPM)** — transient. We retry with
+ *   exponential backoff + jitter, matching OpenAI's own Tenacity
+ *   example (min 1 s, max 60 s, up to 6 attempts).
+ * - **Context length exceeded (HTTP 400 / context_length_exceeded)** —
+ *   not recoverable. The prompt is genuinely too big; no amount of
+ *   retrying helps. Fall through to the recap path immediately.
+ *
+ * If retries exhaust on a sustained rate limit, or the error was
+ * context-length from the start, we build a recap from the same
+ * hydrated mongo history and stream it back as the assistant message
+ * with a "this conversation is getting too long, consider starting a
+ * new one" nudge. Silent truncation mid-conversation is avoided.
  *
  * @access Public
  * @param {Express.Request} req - The request object, containing the request data.
@@ -364,18 +381,26 @@ const chatV2 = async (req, res) => {
         effectiveBody.temperature = botConfig.temperature;
       }
 
-      // Stateless mode: each user turn runs `responses.create` without a
-      // `conversation:` field. OpenAI doesn't retain any server-side history
-      // between turns — which is the intended behavior for Botnim bots (see
-      // system prompts; each question is answered in isolation). This avoids
-      // the runaway prompt-size growth caused by Conversations-API context
-      // replay, where large tool outputs accumulated into 100k+ token prompts
-      // and triggered TPM rate limits on gpt-5.4-mini.
+      // Stateless mode — no OpenAI Conversations API. Instead we hydrate
+      // the full MongoDB history (user + assistant text, tool-call items
+      // excluded) into this turn's input so follow-ups like "what about
+      // 2024?" have the prior exchange to point at.
       //
-      // Within a single user turn the tool-call follow-up loop still echoes
-      // function_call + function_call_output items in the stateless branch of
-      // ResponseStreamManager._executePendingToolCalls — unchanged.
-      const messagesInput = [{ role: 'user', content: text }];
+      // We deliberately do NOT cap the hydration. Truncating silently is
+      // confusing; users notice when the bot "forgets" things earlier
+      // than they expect. Instead, if the resulting prompt exceeds the
+      // model's TPM / context-length ceiling, we catch the failure below
+      // and tell the user "this conversation is too long — start a new
+      // one, here's a recap." That surfaces the limit honestly and puts
+      // the choice in the user's hands.
+      const priorMessages = await hydrateRecentHistory({
+        conversationId,
+        excludeMessageId: userMessageId,
+      });
+      const messagesInput = [
+        ...priorMessages,
+        { role: 'user', content: text },
+      ];
 
       /** @type {undefined | TAssistantEndpoint} */
       const config = req.app.locals[endpoint] ?? {};
@@ -398,10 +423,63 @@ const chatV2 = async (req, res) => {
       await cache.set(cacheKey, `${conversationId}:${responseMessageId}`, ten_minutes);
       sendInitialResponse();
 
-      await responseStreamManager.runResponse({
-        messages: messagesInput,
-        body: effectiveBody,
-      });
+      try {
+        // 429 / TPM: OpenAI's own guide (Example 1, Tenacity) recommends
+        // wait_random_exponential(min=1, max=60) + stop_after_attempt(6).
+        // We mirror that here: up to 6 tries, 1-60 s jittered backoff,
+        // retry ONLY on rate-limit errors. Context-length and every other
+        // failure propagate immediately — waiting doesn't fix a prompt
+        // that's genuinely too large.
+        await retryOnRateLimit(
+          () => responseStreamManager.runResponse({
+            messages: messagesInput,
+            body: effectiveBody,
+          }),
+          {
+            onRetry: (err, attempt, delay) => {
+              logger.warn(
+                '[/assistants/chat/] rate-limit on responses.create (attempt %d); sleeping %dms — %s',
+                attempt + 1, delay, err.message,
+              );
+              // Stream a tool-call-style status bubble to the UI so the
+              // user sees why their message is taking longer than usual.
+              // Fire-and-forget: if emitting fails we shouldn't derail
+              // the retry itself.
+              Promise.resolve(
+                responseStreamManager.emitRetryNotice({
+                  attempt,
+                  delayMs: delay,
+                  reason: 'rate_limit',
+                })
+              ).catch((e) => {
+                logger.warn('[/assistants/chat/] emitRetryNotice failed: %s', e.message);
+              });
+            },
+          },
+        );
+      } catch (err) {
+        // Either: (a) context-length exceeded — prompt too big, never
+        // fixable by retry, show recap; or (b) rate limit still firing
+        // after 6 attempts — show recap too, with an apology; or (c)
+        // something else entirely — let the generic error path handle it.
+        const isContextLen = isContextLengthError(err);
+        const exhaustedRateLimit = isRateLimitError(err);
+        if (!isContextLen && !exhaustedRateLimit) {
+          throw err;
+        }
+        logger.warn(
+          '[/assistants/chat/] conversation too long (%s: %s); returning recap',
+          isContextLen ? 'context_length_exceeded' : 'rate_limit_after_retries',
+          err.message,
+        );
+        const recapText = buildRecap(priorMessages, text);
+        responseStreamManager.intermediateText = recapText;
+        responseStreamManager.run = {
+          id: run_id || `recap_${responseMessageId}`,
+          status: RunStatus.COMPLETED,
+          created_at: Math.floor(Date.now() / 1000),
+        };
+      }
 
       response = responseStreamManager;
       response.text = responseStreamManager.intermediateText;
