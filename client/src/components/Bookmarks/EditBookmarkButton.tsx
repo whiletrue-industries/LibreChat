@@ -1,10 +1,9 @@
 import { useState } from 'react';
-import type { FC } from 'react';
+import { TooltipAnchor, OGDialogTrigger, EditIcon, Button } from '@librechat/client';
 import type { TConversationTag } from 'librechat-data-provider';
+import type { FC } from 'react';
 import BookmarkEditDialog from './BookmarkEditDialog';
-import { EditIcon } from '~/components/svg';
 import { useLocalize } from '~/hooks';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '~/components/ui';
 
 const EditBookmarkButton: FC<{
   bookmark: TConversationTag;
@@ -16,33 +15,31 @@ const EditBookmarkButton: FC<{
   const [open, setOpen] = useState(false);
 
   return (
-    <>
-      <BookmarkEditDialog
-        context="EditBookmarkButton"
-        bookmark={bookmark}
-        open={open}
-        setOpen={setOpen}
-      />
-      <button
-        type="button"
-        className="transition-color flex size-7 items-center justify-center rounded-lg duration-200 hover:bg-surface-hover"
-        tabIndex={tabIndex}
-        onFocus={onFocus}
-        onBlur={onBlur}
-        onClick={() => setOpen(!open)}
-      >
-        <TooltipProvider delayDuration={250}>
-          <Tooltip>
-            <TooltipTrigger asChild>
+    <BookmarkEditDialog
+      context="EditBookmarkButton"
+      bookmark={bookmark}
+      open={open}
+      setOpen={setOpen}
+    >
+      <OGDialogTrigger asChild>
+        <TooltipAnchor
+          description={localize('com_ui_edit')}
+          render={
+            <Button
+              variant="ghost"
+              aria-label={localize('com_ui_bookmarks_edit')}
+              tabIndex={tabIndex}
+              onFocus={onFocus}
+              onBlur={onBlur}
+              onClick={() => setOpen(!open)}
+              className="h-8 w-8 p-0"
+            >
               <EditIcon />
-            </TooltipTrigger>
-            <TooltipContent side="top" sideOffset={0}>
-              {localize('com_ui_edit')}
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      </button>
-    </>
+            </Button>
+          }
+        />
+      </OGDialogTrigger>
+    </BookmarkEditDialog>
   );
 };
 

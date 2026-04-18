@@ -1,9 +1,7 @@
 export * from './ExportConversation';
 export * from './SettingsTabs/';
-export { default as ClearConvos } from './ClearConvos';
-export { default as Logout } from './Logout';
 export { default as MobileNav } from './MobileNav';
-export { default as Nav } from './Nav';
+export { default as Nav, NAV_WIDTH } from './Nav';
 export { default as NavLink } from './NavLink';
 export { default as NewChat } from './NewChat';
 export { default as SearchBar } from './SearchBar';

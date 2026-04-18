@@ -1,8 +1,10 @@
 const fs = require('fs');
 const LdapStrategy = require('passport-ldapauth');
-const { findUser, createUser, updateUser } = require('~/models/userMethods');
-const { isEnabled } = require('~/server/utils');
-const logger = require('~/utils/logger');
+const { logger } = require('@librechat/data-schemas');
+const { SystemRoles, ErrorTypes } = require('librechat-data-provider');
+const { isEnabled, getBalanceConfig, isEmailDomainAllowed } = require('@librechat/api');
+const { createUser, findUser, updateUser, countUsers } = require('~/models');
+const { getAppConfig } = require('~/server/services/Config');
 
 const {
   LDAP_URL,
@@ -14,12 +16,14 @@ const {
   LDAP_FULL_NAME,
   LDAP_ID,
   LDAP_USERNAME,
+  LDAP_EMAIL,
   LDAP_TLS_REJECT_UNAUTHORIZED,
+  LDAP_STARTTLS,
 } = process.env;
 
 // Check required environment variables
 if (!LDAP_URL || !LDAP_USER_SEARCH_BASE) {
-  return null;
+  module.exports = null;
 }
 
 const searchAttributes = [
@@ -43,7 +47,11 @@ if (LDAP_ID) {
 if (LDAP_USERNAME) {
   searchAttributes.push(LDAP_USERNAME);
 }
+if (LDAP_EMAIL) {
+  searchAttributes.push(LDAP_EMAIL);
+}
 const rejectUnauthorized = isEnabled(LDAP_TLS_REJECT_UNAUTHORIZED);
+const startTLS = isEnabled(LDAP_STARTTLS);
 
 const ldapOptions = {
   server: {
@@ -66,6 +74,7 @@ const ldapOptions = {
         })(),
       },
     }),
+    ...(startTLS && { starttls: true }),
   },
   usernameField: 'email',
   passwordField: 'password',
@@ -76,20 +85,19 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
     return done(null, false, { message: 'Invalid credentials' });
   }
 
-  if (!userinfo.mail) {
-    logger.warn(
-      '[ldapStrategy]',
-      'No email attributes found in userinfo',
-      JSON.stringify(userinfo, null, 2),
-    );
-    return done(null, false, { message: 'Invalid credentials' });
-  }
-
   try {
     const ldapId =
       (LDAP_ID && userinfo[LDAP_ID]) || userinfo.uid || userinfo.sAMAccountName || userinfo.mail;
 
     let user = await findUser({ ldapId });
+    if (user && user.provider !== 'ldap') {
+      logger.info(
+        `[ldapStrategy] User ${user.email} already exists with provider ${user.provider}`,
+      );
+      return done(null, false, {
+        message: ErrorTypes.AUTH_FAILED,
+      });
+    }
 
     const fullNameAttributes = LDAP_FULL_NAME && LDAP_FULL_NAME.split(',');
     const fullName =
@@ -100,23 +108,50 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
     const username =
       (LDAP_USERNAME && userinfo[LDAP_USERNAME]) || userinfo.givenName || userinfo.mail;
 
+    let mail = (LDAP_EMAIL && userinfo[LDAP_EMAIL]) || userinfo.mail || username + '@ldap.local';
+    mail = Array.isArray(mail) ? mail[0] : mail;
+
+    if (!userinfo.mail && !(LDAP_EMAIL && userinfo[LDAP_EMAIL])) {
+      logger.warn(
+        '[ldapStrategy]',
+        `No valid email attribute found in LDAP userinfo. Using fallback email: ${username}@ldap.local`,
+        `LDAP_EMAIL env var: ${LDAP_EMAIL || 'not set'}`,
+        `Available userinfo attributes: ${Object.keys(userinfo).join(', ')}`,
+        'Full userinfo:',
+        JSON.stringify(userinfo, null, 2),
+      );
+    }
+
+    const appConfig = await getAppConfig();
+    if (!isEmailDomainAllowed(mail, appConfig?.registration?.allowedDomains)) {
+      logger.error(
+        `[LDAP Strategy] Authentication blocked - email domain not allowed [Email: ${mail}]`,
+      );
+      return done(null, false, { message: 'Email domain not allowed' });
+    }
+
     if (!user) {
+      const isFirstRegisteredUser = (await countUsers()) === 0;
+      const role = isFirstRegisteredUser ? SystemRoles.ADMIN : SystemRoles.USER;
+
       user = {
         provider: 'ldap',
         ldapId,
         username,
-        email: userinfo.mail,
+        email: mail,
         emailVerified: true, // The ldap server administrator should verify the email
         name: fullName,
+        role,
       };
-      const userId = await createUser(user);
+      const balanceConfig = getBalanceConfig(appConfig);
+      const userId = await createUser(user, balanceConfig);
       user._id = userId;
     } else {
       // Users registered in LDAP are assumed to have their user information managed in LDAP,
       // so update the user information with the values registered in LDAP
       user.provider = 'ldap';
       user.ldapId = ldapId;
-      user.email = userinfo.mail;
+      user.email = mail;
       user.username = username;
       user.name = fullName;
     }

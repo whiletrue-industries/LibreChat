@@ -1,18 +1,24 @@
 const express = require('express');
+const { logger } = require('@librechat/data-schemas');
+const { generateCheckAccess } = require('@librechat/api');
 const { PermissionTypes, Permissions } = require('librechat-data-provider');
 const {
-  getConversationTags,
+  updateTagsForConversation,
   updateConversationTag,
   createConversationTag,
   deleteConversationTag,
-  updateTagsForConversation,
+  getConversationTags,
 } = require('~/models/ConversationTag');
-const { requireJwtAuth, generateCheckAccess } = require('~/server/middleware');
-const { logger } = require('~/config');
+const { requireJwtAuth } = require('~/server/middleware');
+const { getRoleByName } = require('~/models/Role');
 
 const router = express.Router();
 
-const checkBookmarkAccess = generateCheckAccess(PermissionTypes.BOOKMARKS, [Permissions.USE]);
+const checkBookmarkAccess = generateCheckAccess({
+  permissionType: PermissionTypes.BOOKMARKS,
+  permissions: [Permissions.USE],
+  getRoleByName,
+});
 
 router.use(requireJwtAuth);
 router.use(checkBookmarkAccess);
@@ -61,7 +67,8 @@ router.post('/', async (req, res) => {
  */
 router.put('/:tag', async (req, res) => {
   try {
-    const tag = await updateConversationTag(req.user.id, req.params.tag, req.body);
+    const decodedTag = decodeURIComponent(req.params.tag);
+    const tag = await updateConversationTag(req.user.id, decodedTag, req.body);
     if (tag) {
       res.status(200).json(tag);
     } else {
@@ -81,7 +88,8 @@ router.put('/:tag', async (req, res) => {
  */
 router.delete('/:tag', async (req, res) => {
   try {
-    const tag = await deleteConversationTag(req.user.id, req.params.tag);
+    const decodedTag = decodeURIComponent(req.params.tag);
+    const tag = await deleteConversationTag(req.user.id, decodedTag);
     if (tag) {
       res.status(200).json(tag);
     } else {

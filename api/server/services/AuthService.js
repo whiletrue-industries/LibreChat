@@ -1,50 +1,71 @@
 const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 const { webcrypto } = require('node:crypto');
-const { SystemRoles, errorsToString } = require('librechat-data-provider');
+const {
+  logger,
+  DEFAULT_SESSION_EXPIRY,
+  DEFAULT_REFRESH_TOKEN_EXPIRY,
+} = require('@librechat/data-schemas');
+const { ErrorTypes, SystemRoles, errorsToString } = require('librechat-data-provider');
+const {
+  math,
+  isEnabled,
+  checkEmailConfig,
+  isEmailDomainAllowed,
+  shouldUseSecureCookie,
+} = require('@librechat/api');
 const {
   findUser,
-  countUsers,
+  findToken,
   createUser,
   updateUser,
+  countUsers,
   getUserById,
+  findSession,
+  createToken,
+  deleteTokens,
+  deleteSession,
+  createSession,
   generateToken,
   deleteUserById,
-} = require('~/models/userMethods');
-const { createToken, findToken, deleteTokens, Session } = require('~/models');
-const { sendEmail, checkEmailConfig } = require('~/server/utils');
+  generateRefreshToken,
+} = require('~/models');
 const { registerSchema } = require('~/strategies/validators');
-const { hashToken } = require('~/server/utils/crypto');
-const isDomainAllowed = require('./isDomainAllowed');
-const { logger } = require('~/config');
+const { getAppConfig } = require('~/server/services/Config');
+const { sendEmail } = require('~/server/utils');
 
 const domains = {
   client: process.env.DOMAIN_CLIENT,
   server: process.env.DOMAIN_SERVER,
 };
 
-const isProduction = process.env.NODE_ENV === 'production';
 const genericVerificationMessage = 'Please check your email to verify your email address.';
 
 /**
  * Logout user
  *
- * @param {String} userId
- * @param {*} refreshToken
+ * @param {ServerRequest} req
+ * @param {string} refreshToken
  * @returns
  */
-const logoutUser = async (userId, refreshToken) => {
+const logoutUser = async (req, refreshToken) => {
   try {
-    const hash = await hashToken(refreshToken);
+    const userId = req.user._id;
+    const session = await findSession({ userId: userId, refreshToken });
 
-    // Find the session with the matching user and refreshTokenHash
-    const session = await Session.findOne({ user: userId, refreshTokenHash: hash });
     if (session) {
       try {
-        await Session.deleteOne({ _id: session._id });
+        await deleteSession({ sessionId: session._id });
       } catch (deleteErr) {
         logger.error('[logoutUser] Failed to delete session.', deleteErr);
         return { status: 500, message: 'Failed to delete session.' };
       }
+    }
+
+    try {
+      req.session.destroy();
+    } catch (destroyErr) {
+      logger.debug('[logoutUser] Failed to destroy session.', destroyErr);
     }
 
     return { status: 200, message: 'Logout successful' };
@@ -65,7 +86,7 @@ const createTokenHash = () => {
 
 /**
  * Send Verification Email
- * @param {Partial<MongoUser> & { _id: ObjectId, email: string, name: string}} user
+ * @param {Partial<IUser>} user
  * @returns {Promise<void>}
  */
 const sendVerificationEmail = async (user) => {
@@ -79,7 +100,7 @@ const sendVerificationEmail = async (user) => {
     subject: 'Verify your email',
     payload: {
       appName: process.env.APP_TITLE || 'LibreChat',
-      name: user.name,
+      name: user.name || user.username || user.email,
       verificationLink: verificationLink,
       year: new Date().getFullYear(),
     },
@@ -99,40 +120,57 @@ const sendVerificationEmail = async (user) => {
 
 /**
  * Verify Email
- * @param {Express.Request} req
+ * @param {ServerRequest} req
  */
 const verifyEmail = async (req) => {
   const { email, token } = req.body;
-  let emailVerificationData = await findToken({ email: decodeURIComponent(email) });
+  const decodedEmail = decodeURIComponent(email);
+
+  const user = await findUser({ email: decodedEmail }, 'email _id emailVerified');
+
+  if (!user) {
+    logger.warn(`[verifyEmail] [User not found] [Email: ${decodedEmail}]`);
+    return new Error('User not found');
+  }
+
+  if (user.emailVerified) {
+    logger.info(`[verifyEmail] Email already verified [Email: ${decodedEmail}]`);
+    return { message: 'Email already verified', status: 'success' };
+  }
+
+  let emailVerificationData = await findToken({ email: decodedEmail }, { sort: { createdAt: -1 } });
 
   if (!emailVerificationData) {
-    logger.warn(`[verifyEmail] [No email verification data found] [Email: ${email}]`);
+    logger.warn(`[verifyEmail] [No email verification data found] [Email: ${decodedEmail}]`);
     return new Error('Invalid or expired password reset token');
   }
 
   const isValid = bcrypt.compareSync(token, emailVerificationData.token);
 
   if (!isValid) {
-    logger.warn(`[verifyEmail] [Invalid or expired email verification token] [Email: ${email}]`);
+    logger.warn(
+      `[verifyEmail] [Invalid or expired email verification token] [Email: ${decodedEmail}]`,
+    );
     return new Error('Invalid or expired email verification token');
   }
 
   const updatedUser = await updateUser(emailVerificationData.userId, { emailVerified: true });
+
   if (!updatedUser) {
-    logger.warn(`[verifyEmail] [User not found] [Email: ${email}]`);
-    return new Error('User not found');
+    logger.warn(`[verifyEmail] [User update failed] [Email: ${decodedEmail}]`);
+    return new Error('Failed to update user verification status');
   }
 
   await deleteTokens({ token: emailVerificationData.token });
-  logger.info(`[verifyEmail] Email verification successful. [Email: ${email}]`);
-  return { message: 'Email verification was successful' };
+  logger.info(`[verifyEmail] Email verification successful [Email: ${decodedEmail}]`);
+  return { message: 'Email verification was successful', status: 'success' };
 };
 
 /**
  * Register a new user.
- * @param {MongoUser} user <email, password, name, username>
- * @param {Partial<MongoUser>} [additionalData={}]
- * @returns {Promise<{status: number, message: string, user?: MongoUser}>}
+ * @param {IUser} user <email, password, name, username>
+ * @param {Partial<IUser>} [additionalData={}]
+ * @returns {Promise<{status: number, message: string, user?: IUser}>}
  */
 const registerUser = async (user, additionalData = {}) => {
   const { error } = registerSchema.safeParse(user);
@@ -147,10 +185,18 @@ const registerUser = async (user, additionalData = {}) => {
     return { status: 404, message: errorMessage };
   }
 
-  const { email, password, name, username } = user;
+  const { email, password, name, username, provider } = user;
 
   let newUserId;
   try {
+    const appConfig = await getAppConfig();
+    if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
+      const errorMessage =
+        'The email address provided cannot be used. Please use a different email address.';
+      logger.error(`[registerUser] [Registration not allowed] [Email: ${user.email}]`);
+      return { status: 403, message: errorMessage };
+    }
+
     const existingUser = await findUser({ email }, 'email _id');
 
     if (existingUser) {
@@ -165,19 +211,12 @@ const registerUser = async (user, additionalData = {}) => {
       return { status: 200, message: genericVerificationMessage };
     }
 
-    if (!(await isDomainAllowed(email))) {
-      const errorMessage =
-        'The email address provided cannot be used. Please use a different email address.';
-      logger.error(`[registerUser] [Registration not allowed] [Email: ${user.email}]`);
-      return { status: 403, message: errorMessage };
-    }
-
     //determine if this is the first registered user (not counting anonymous_user)
     const isFirstRegisteredUser = (await countUsers()) === 0;
 
     const salt = bcrypt.genSaltSync(10);
     const newUserData = {
-      provider: 'local',
+      provider: provider ?? 'local',
       email,
       username,
       name,
@@ -188,7 +227,9 @@ const registerUser = async (user, additionalData = {}) => {
     };
 
     const emailEnabled = checkEmailConfig();
-    const newUser = await createUser(newUserData, false, true);
+    const disableTTL = isEnabled(process.env.ALLOW_UNVERIFIED_EMAIL_LOGIN);
+
+    const newUser = await createUser(newUserData, appConfig.balance, disableTTL, true);
     newUserId = newUser._id;
     if (emailEnabled && !newUser.emailVerified) {
       await sendVerificationEmail({
@@ -215,10 +256,17 @@ const registerUser = async (user, additionalData = {}) => {
 
 /**
  * Request password reset
- * @param {Express.Request} req
+ * @param {ServerRequest} req
  */
 const requestPasswordReset = async (req) => {
   const { email } = req.body;
+  const appConfig = await getAppConfig();
+  if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
+    const error = new Error(ErrorTypes.AUTH_FAILED);
+    error.code = ErrorTypes.AUTH_FAILED;
+    error.message = 'Email domain not allowed';
+    return error;
+  }
   const user = await findUser({ email }, 'email _id');
   const emailEnabled = checkEmailConfig();
 
@@ -250,7 +298,7 @@ const requestPasswordReset = async (req) => {
       subject: 'Password Reset Request',
       payload: {
         appName: process.env.APP_TITLE || 'LibreChat',
-        name: user.name,
+        name: user.name || user.username || user.email,
         link: link,
         year: new Date().getFullYear(),
       },
@@ -280,9 +328,12 @@ const requestPasswordReset = async (req) => {
  * @returns
  */
 const resetPassword = async (userId, token, password) => {
-  let passwordResetToken = await findToken({
-    userId,
-  });
+  let passwordResetToken = await findToken(
+    {
+      userId,
+    },
+    { sort: { createdAt: -1 } },
+  );
 
   if (!passwordResetToken) {
     return new Error('Invalid or expired password reset token');
@@ -303,7 +354,7 @@ const resetPassword = async (userId, token, password) => {
       subject: 'Password Reset Successfully',
       payload: {
         appName: process.env.APP_TITLE || 'LibreChat',
-        name: user.name,
+        name: user.name || user.username || user.email,
         year: new Date().getFullYear(),
       },
       template: 'passwordReset.handlebars',
@@ -317,41 +368,164 @@ const resetPassword = async (userId, token, password) => {
 
 /**
  * Set Auth Tokens
- *
  * @param {String | ObjectId} userId
- * @param {Object} res
- * @param {String} sessionId
+ * @param {ServerResponse} res
+ * @param {ISession | null} [session=null]
  * @returns
  */
-const setAuthTokens = async (userId, res, sessionId = null) => {
+const setAuthTokens = async (userId, res, _session = null) => {
   try {
-    const user = await getUserById(userId);
-    const token = await generateToken(user);
-
-    let session;
+    let session = _session;
+    let refreshToken;
     let refreshTokenExpires;
-    if (sessionId) {
-      session = await Session.findById(sessionId);
+    const expiresIn = math(process.env.REFRESH_TOKEN_EXPIRY, DEFAULT_REFRESH_TOKEN_EXPIRY);
+
+    if (session && session._id && session.expiration != null) {
       refreshTokenExpires = session.expiration.getTime();
+      refreshToken = await generateRefreshToken(session);
     } else {
-      session = new Session({ user: userId });
-      const { REFRESH_TOKEN_EXPIRY } = process.env ?? {};
-      const expires = eval(REFRESH_TOKEN_EXPIRY) ?? 1000 * 60 * 60 * 24 * 7;
-      refreshTokenExpires = Date.now() + expires;
+      const result = await createSession(userId, { expiresIn });
+      session = result.session;
+      refreshToken = result.refreshToken;
+      refreshTokenExpires = session.expiration.getTime();
     }
 
-    const refreshToken = await session.generateRefreshToken();
+    const user = await getUserById(userId);
+    const sessionExpiry = math(process.env.SESSION_EXPIRY, DEFAULT_SESSION_EXPIRY);
+    const token = await generateToken(user, sessionExpiry);
 
     res.cookie('refreshToken', refreshToken, {
       expires: new Date(refreshTokenExpires),
       httpOnly: true,
-      secure: isProduction,
+      secure: shouldUseSecureCookie(),
       sameSite: 'strict',
     });
-
+    res.cookie('token_provider', 'librechat', {
+      expires: new Date(refreshTokenExpires),
+      httpOnly: true,
+      secure: shouldUseSecureCookie(),
+      sameSite: 'strict',
+    });
     return token;
   } catch (error) {
     logger.error('[setAuthTokens] Error in setting authentication tokens:', error);
+    throw error;
+  }
+};
+
+/**
+ * @function setOpenIDAuthTokens
+ * Set OpenID Authentication Tokens
+ * Stores tokens server-side in express-session to avoid large cookie sizes
+ * that can exceed HTTP/2 header limits (especially for users with many group memberships).
+ *
+ * @param {import('openid-client').TokenEndpointResponse & import('openid-client').TokenEndpointResponseHelpers} tokenset
+ * - The tokenset object containing access and refresh tokens
+ * @param {Object} req - request object (for session access)
+ * @param {Object} res - response object
+ * @param {string} [userId] - Optional MongoDB user ID for image path validation
+ * @returns {String} - id_token (preferred) or access_token as the app auth token
+ */
+const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken) => {
+  try {
+    if (!tokenset) {
+      logger.error('[setOpenIDAuthTokens] No tokenset found in request');
+      return;
+    }
+    const expiryInMilliseconds = math(
+      process.env.REFRESH_TOKEN_EXPIRY,
+      DEFAULT_REFRESH_TOKEN_EXPIRY,
+    );
+    const expirationDate = new Date(Date.now() + expiryInMilliseconds);
+    if (tokenset == null) {
+      logger.error('[setOpenIDAuthTokens] No tokenset found in request');
+      return;
+    }
+    if (!tokenset.access_token) {
+      logger.error('[setOpenIDAuthTokens] No access token found in tokenset');
+      return;
+    }
+
+    const refreshToken = tokenset.refresh_token || existingRefreshToken;
+
+    if (!refreshToken) {
+      logger.error('[setOpenIDAuthTokens] No refresh token available');
+      return;
+    }
+
+    /**
+     * Use id_token as the app authentication token (Bearer token for JWKS validation).
+     * The id_token is always a standard JWT signed by the IdP's JWKS keys with the app's
+     * client_id as audience. The access_token may be opaque or intended for a different
+     * audience (e.g., Microsoft Graph API), which fails JWKS validation.
+     * Falls back to access_token for providers where id_token is not available.
+     */
+    const appAuthToken = tokenset.id_token || tokenset.access_token;
+
+    /**
+     * Always set refresh token cookie so it survives express session expiry.
+     * The session cookie maxAge (SESSION_EXPIRY, default 15 min) is typically shorter
+     * than the OIDC token lifetime (~1 hour). Without this cookie fallback, the refresh
+     * token stored only in the session is lost when the session expires, causing the user
+     * to be signed out on the next token refresh attempt.
+     * The refresh token is small (opaque string) so it doesn't hit the HTTP/2 header
+     * size limits that motivated session storage for the larger access_token/id_token.
+     */
+    res.cookie('refreshToken', refreshToken, {
+      expires: expirationDate,
+      httpOnly: true,
+      secure: shouldUseSecureCookie(),
+      sameSite: 'strict',
+    });
+
+    /** Store tokens server-side in session to avoid large cookies */
+    if (req.session) {
+      req.session.openidTokens = {
+        accessToken: tokenset.access_token,
+        idToken: tokenset.id_token,
+        refreshToken: refreshToken,
+        expiresAt: expirationDate.getTime(),
+      };
+    } else {
+      logger.warn('[setOpenIDAuthTokens] No session available, falling back to cookies');
+      res.cookie('openid_access_token', tokenset.access_token, {
+        expires: expirationDate,
+        httpOnly: true,
+        secure: shouldUseSecureCookie(),
+        sameSite: 'strict',
+      });
+      if (tokenset.id_token) {
+        res.cookie('openid_id_token', tokenset.id_token, {
+          expires: expirationDate,
+          httpOnly: true,
+          secure: shouldUseSecureCookie(),
+          sameSite: 'strict',
+        });
+      }
+    }
+
+    /** Small cookie to indicate token provider (required for auth middleware) */
+    res.cookie('token_provider', 'openid', {
+      expires: expirationDate,
+      httpOnly: true,
+      secure: shouldUseSecureCookie(),
+      sameSite: 'strict',
+    });
+    if (userId && isEnabled(process.env.OPENID_REUSE_TOKENS)) {
+      /** JWT-signed user ID cookie for image path validation when OPENID_REUSE_TOKENS is enabled */
+      const signedUserId = jwt.sign({ id: userId }, process.env.JWT_REFRESH_SECRET, {
+        expiresIn: expiryInMilliseconds / 1000,
+      });
+      res.cookie('openid_user_id', signedUserId, {
+        expires: expirationDate,
+        httpOnly: true,
+        secure: shouldUseSecureCookie(),
+        sameSite: 'strict',
+      });
+    }
+    return appAuthToken;
+  } catch (error) {
+    logger.error('[setOpenIDAuthTokens] Error in setting authentication tokens:', error);
     throw error;
   }
 };
@@ -366,7 +540,7 @@ const setAuthTokens = async (userId, res, sessionId = null) => {
 const resendVerificationEmail = async (req) => {
   try {
     const { email } = req.body;
-    await deleteTokens(email);
+    await deleteTokens({ email });
     const user = await findUser({ email }, 'email _id name');
 
     if (!user) {
@@ -385,7 +559,7 @@ const resendVerificationEmail = async (req) => {
       subject: 'Verify your email',
       payload: {
         appName: process.env.APP_TITLE || 'LibreChat',
-        name: user.name,
+        name: user.name || user.username || user.email,
         verificationLink: verificationLink,
         year: new Date().getFullYear(),
       },
@@ -420,9 +594,8 @@ module.exports = {
   verifyEmail,
   registerUser,
   setAuthTokens,
-  createTokenHash,
   resetPassword,
-  isDomainAllowed,
+  setOpenIDAuthTokens,
   requestPasswordReset,
   resendVerificationEmail,
 };

@@ -1,13 +1,16 @@
 // errorHandler.js
-const { sendResponse } = require('~/server/utils');
-const { logger } = require('~/config');
+const { logger } = require('@librechat/data-schemas');
+const { CacheKeys, ViolationTypes, ContentTypes } = require('librechat-data-provider');
+const { recordUsage, checkMessageGaps } = require('~/server/services/Threads');
+const { sendResponse } = require('~/server/middleware/error');
+const { getConvo } = require('~/models/Conversation');
 const getLogStores = require('~/cache/getLogStores');
-const { CacheKeys, ViolationTypes } = require('librechat-data-provider');
 
 /**
  * @typedef {Object} ErrorHandlerContext
  * @property {OpenAIClient} openai - The OpenAI client
- * @property {string} run_id - The run ID (response ID under Responses API)
+ * @property {string} thread_id - The thread ID
+ * @property {string} run_id - The run ID
  * @property {boolean} completedRun - Whether the run has completed
  * @property {string} assistant_id - The assistant ID
  * @property {string} conversationId - The conversation ID
@@ -19,20 +22,14 @@ const { CacheKeys, ViolationTypes } = require('librechat-data-provider');
 
 /**
  * @typedef {Object} ErrorHandlerDependencies
- * @property {Express.Request} req - The Express request object
+ * @property {ServerRequest} req - The Express request object
  * @property {Express.Response} res - The Express response object
  * @property {() => ErrorHandlerContext} getContext - Function to get the current context
  * @property {string} [originPath] - The origin path for the error handler
  */
 
 /**
- * Creates an error handler function with the given dependencies.
- *
- * The Assistants-API branches (cancel/retrieve/checkMessageGaps) have been
- * removed along with the rest of the Assistants chat path. Under the
- * Responses API there is no server-side run to cancel or reconcile; if the
- * stream fails mid-flight we just surface the error and clean up the cache.
- *
+ * Creates an error handler function with the given dependencies
  * @param {ErrorHandlerDependencies} dependencies - The dependencies for the error handler
  * @returns {(error: Error) => Promise<void>} The error handler function
  */
@@ -46,18 +43,22 @@ const createErrorHandler = ({ req, res, getContext, originPath = '/assistants/ch
    */
   return async (error) => {
     const {
+      openai,
+      run_id,
+      endpoint,
       cacheKey,
+      thread_id,
       completedRun,
       assistant_id,
       conversationId,
       parentMessageId,
       responseMessageId,
-      endpoint,
     } = getContext();
 
     const defaultErrorMessage =
       'The Assistant run failed to initialize. Try sending a message in a new conversation.';
     const messageData = {
+      thread_id,
       assistant_id,
       conversationId,
       parentMessageId,
@@ -77,7 +78,7 @@ const createErrorHandler = ({ req, res, getContext, originPath = '/assistants/ch
     } else if (/Files.*are invalid/.test(error.message)) {
       const errorMessage = `Files are invalid, or may not have uploaded yet.${
         endpoint === 'azureAssistants'
-          ? ' If using Azure OpenAI, files are only available in the region of the assistant\'s model at the time of upload.'
+          ? " If using Azure OpenAI, files are only available in the region of the assistant's model at the time of upload."
           : ''
       }`;
       return sendResponse(req, res, messageData, errorMessage);
@@ -94,19 +95,98 @@ const createErrorHandler = ({ req, res, getContext, originPath = '/assistants/ch
       logger.error(`[${originPath}]`, error);
     }
 
-    // Responses API: no server-side run to cancel / retrieve / reconcile.
-    // Surface the original error to the client and stop.
-    try {
-      await cache.delete(cacheKey);
-    } catch (cacheErr) {
-      logger.error(`[${originPath}] Error clearing cache`, cacheErr);
+    if (!openai || !thread_id || !run_id) {
+      return sendResponse(req, res, messageData, defaultErrorMessage);
     }
-    return sendResponse(
-      req,
-      res,
-      messageData,
-      error?.message ?? defaultErrorMessage,
-    );
+
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
+    try {
+      const status = await cache.get(cacheKey);
+      if (status === 'cancelled') {
+        logger.debug(`[${originPath}] Run already cancelled`);
+        return res.end();
+      }
+      await cache.delete(cacheKey);
+      const cancelledRun = await openai.beta.threads.runs.cancel(run_id, { thread_id });
+      logger.debug(`[${originPath}] Cancelled run:`, cancelledRun);
+    } catch (error) {
+      logger.error(`[${originPath}] Error cancelling run`, error);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
+    let run;
+    try {
+      run = await openai.beta.threads.runs.retrieve(run_id, { thread_id });
+      await recordUsage({
+        ...run.usage,
+        model: run.model,
+        user: req.user.id,
+        conversationId,
+      });
+    } catch (error) {
+      logger.error(`[${originPath}] Error fetching or processing run`, error);
+    }
+
+    let finalEvent;
+    try {
+      const runMessages = await checkMessageGaps({
+        openai,
+        run_id,
+        endpoint,
+        thread_id,
+        conversationId,
+        latestMessageId: responseMessageId,
+      });
+
+      const errorContentPart = {
+        text: {
+          value:
+            error?.message ?? 'There was an error processing your request. Please try again later.',
+        },
+        type: ContentTypes.ERROR,
+      };
+
+      if (!Array.isArray(runMessages[runMessages.length - 1]?.content)) {
+        runMessages[runMessages.length - 1].content = [errorContentPart];
+      } else {
+        const contentParts = runMessages[runMessages.length - 1].content;
+        for (let i = 0; i < contentParts.length; i++) {
+          const currentPart = contentParts[i];
+          /** @type {CodeToolCall | RetrievalToolCall | FunctionToolCall | undefined} */
+          const toolCall = currentPart?.[ContentTypes.TOOL_CALL];
+          if (
+            toolCall &&
+            toolCall?.function &&
+            !(toolCall?.function?.output || toolCall?.function?.output?.length)
+          ) {
+            contentParts[i] = {
+              ...currentPart,
+              [ContentTypes.TOOL_CALL]: {
+                ...toolCall,
+                function: {
+                  ...toolCall.function,
+                  output: 'error processing tool',
+                },
+              },
+            };
+          }
+        }
+        runMessages[runMessages.length - 1].content.push(errorContentPart);
+      }
+
+      finalEvent = {
+        final: true,
+        conversation: await getConvo(req.user.id, conversationId),
+        runMessages,
+      };
+    } catch (error) {
+      logger.error(`[${originPath}] Error finalizing error process`, error);
+      return sendResponse(req, res, messageData, 'The Assistant run failed');
+    }
+
+    return sendResponse(req, res, finalEvent);
   };
 };
 

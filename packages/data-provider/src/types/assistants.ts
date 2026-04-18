@@ -1,6 +1,9 @@
 import type { OpenAPIV3 } from 'openapi-types';
-import type { AssistantsEndpoint } from 'src/schemas';
+import type { AssistantsEndpoint, AgentProvider } from 'src/schemas';
+import type { Agents, GraphEdge } from './agents';
+import type { ContentTypes } from './runs';
 import type { TFile } from './files';
+import { ArtifactModes } from 'src/artifacts';
 
 export type Schema = OpenAPIV3.SchemaObject & { description?: string };
 export type Reference = OpenAPIV3.ReferenceObject & { description?: string };
@@ -13,15 +16,23 @@ export type Metadata = {
 };
 
 export enum Tools {
+  execute_code = 'execute_code',
   code_interpreter = 'code_interpreter',
   file_search = 'file_search',
+  web_search = 'web_search',
   retrieval = 'retrieval',
   function = 'function',
+  memory = 'memory',
+  ui_resources = 'ui_resources',
 }
 
 export enum EToolResources {
   code_interpreter = 'code_interpreter',
+  execute_code = 'execute_code',
   file_search = 'file_search',
+  image_edit = 'image_edit',
+  context = 'context',
+  ocr = 'ocr',
 }
 
 export type Tool = {
@@ -34,6 +45,8 @@ export type FunctionTool = {
     description: string;
     name: string;
     parameters: Record<string, unknown>;
+    strict?: boolean;
+    additionalProperties?: boolean; // must be false if strict is true https://platform.openai.com/docs/guides/structured-outputs/some-type-specific-keywords-are-not-yet-supported
   };
 };
 
@@ -66,17 +79,20 @@ export interface FileSearchResource {
   vector_store_ids?: Array<string>;
 }
 
+/* Assistant types */
+
 export type Assistant = {
   id: string;
   created_at: number;
   description: string | null;
-  file_ids: string[];
+  file_ids?: string[];
   instructions: string | null;
+  conversation_starters?: string[];
   metadata: Metadata | null;
   model: string;
   name: string | null;
   object: string;
-  tools: FunctionTool[];
+  tools?: FunctionTool[];
   tool_resources?: ToolResources;
 };
 
@@ -87,11 +103,13 @@ export type AssistantCreateParams = {
   description?: string | null;
   file_ids?: string[];
   instructions?: string | null;
+  conversation_starters?: string[];
   metadata?: Metadata | null;
   name?: string | null;
   tools?: Array<FunctionTool | string>;
   endpoint: AssistantsEndpoint;
   version: number | string;
+  append_current_datetime?: boolean;
 };
 
 export type AssistantUpdateParams = {
@@ -99,11 +117,13 @@ export type AssistantUpdateParams = {
   description?: string | null;
   file_ids?: string[];
   instructions?: string | null;
+  conversation_starters?: string[] | null;
   metadata?: Metadata | null;
   name?: string | null;
   tools?: Array<FunctionTool | string>;
   tool_resources?: ToolResources;
   endpoint: AssistantsEndpoint;
+  append_current_datetime?: boolean;
 };
 
 export type AssistantListParams = {
@@ -131,6 +151,211 @@ export type File = {
   filename: string;
   object: string;
   purpose: 'fine-tune' | 'fine-tune-results' | 'assistants' | 'assistants_output';
+};
+
+/* Agent types */
+
+export type AgentParameterValue = number | string | null;
+
+export type AgentModelParameters = {
+  model?: string;
+  temperature: AgentParameterValue;
+  maxContextTokens: AgentParameterValue;
+  max_context_tokens: AgentParameterValue;
+  max_output_tokens: AgentParameterValue;
+  top_p: AgentParameterValue;
+  frequency_penalty: AgentParameterValue;
+  presence_penalty: AgentParameterValue;
+  useResponsesApi?: boolean;
+};
+
+export interface AgentBaseResource {
+  /**
+   * A list of file IDs made available to the tool.
+   */
+  file_ids?: Array<string>;
+  /**
+   * A list of files already fetched.
+   */
+  files?: Array<TFile>;
+}
+
+export interface AgentToolResources {
+  [EToolResources.image_edit]?: AgentBaseResource;
+  [EToolResources.execute_code]?: ExecuteCodeResource;
+  [EToolResources.file_search]?: AgentFileResource;
+  [EToolResources.context]?: AgentBaseResource;
+  /** @deprecated Use context instead */
+  [EToolResources.ocr]?: AgentBaseResource;
+}
+/**
+ * A resource for the execute_code tool.
+ * Contains file IDs made available to the tool (max 20 files) and already fetched files.
+ */
+export type ExecuteCodeResource = AgentBaseResource;
+
+export interface AgentFileResource extends AgentBaseResource {
+  /**
+   * The ID of the vector store attached to this agent. There
+   * can be a maximum of 1 vector store attached to the agent.
+   */
+  vector_store_ids?: Array<string>;
+}
+export type SupportContact = {
+  name?: string;
+  email?: string;
+};
+
+/**
+ * Specifies who can invoke a tool.
+ * - 'direct': LLM can call directly
+ * - 'code_execution': Only callable via programmatic tool calling (PTC)
+ */
+export type AllowedCaller = 'direct' | 'code_execution';
+
+/**
+ * Per-tool configuration options stored at the agent level.
+ * Keyed by tool_id (e.g., "search_mcp_github").
+ */
+export type ToolOptions = {
+  /**
+   * If true, the tool uses deferred loading (discoverable via tool search).
+   * @default false
+   */
+  defer_loading?: boolean;
+  /**
+   * Specifies who can invoke this tool.
+   * - 'direct': LLM can call directly (default behavior)
+   * - 'code_execution': Only callable via PTC sandbox
+   * @default ['direct']
+   */
+  allowed_callers?: AllowedCaller[];
+};
+
+/**
+ * Map of tool_id to its configuration options.
+ * Used to customize tool behavior per agent.
+ */
+export type AgentToolOptions = Record<string, ToolOptions>;
+
+export type Agent = {
+  _id?: string;
+  id: string;
+  name: string | null;
+  author?: string | null;
+  /** The original custom endpoint name, lowercased */
+  endpoint?: string | null;
+  authorName?: string | null;
+  description: string | null;
+  created_at: number;
+  avatar: AgentAvatar | null;
+  instructions?: string | null;
+  additional_instructions?: string | null;
+  tools?: string[];
+  projectIds?: string[];
+  tool_kwargs?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+  provider: AgentProvider;
+  model: string | null;
+  model_parameters: AgentModelParameters;
+  conversation_starters?: string[];
+  /** @deprecated Use ACL permissions instead */
+  isCollaborative?: boolean;
+  tool_resources?: AgentToolResources;
+  /** @deprecated Use edges instead */
+  agent_ids?: string[];
+  edges?: GraphEdge[];
+  end_after_tools?: boolean;
+  hide_sequential_outputs?: boolean;
+  artifacts?: ArtifactModes;
+  recursion_limit?: number;
+  isPublic?: boolean;
+  version?: number;
+  category?: string;
+  support_contact?: SupportContact;
+  /** Per-tool configuration options (deferred loading, allowed callers, etc.) */
+  tool_options?: AgentToolOptions;
+};
+
+export type TAgentsMap = Record<string, Agent | undefined>;
+
+export type AgentCreateParams = {
+  name?: string | null;
+  description?: string | null;
+  avatar?: AgentAvatar | null;
+  file_ids?: string[];
+  instructions?: string | null;
+  tools?: Array<FunctionTool | string>;
+  provider: AgentProvider;
+  model: string | null;
+  model_parameters: AgentModelParameters;
+} & Pick<
+  Agent,
+  | 'agent_ids'
+  | 'edges'
+  | 'end_after_tools'
+  | 'hide_sequential_outputs'
+  | 'artifacts'
+  | 'recursion_limit'
+  | 'category'
+  | 'support_contact'
+  | 'tool_options'
+>;
+
+export type AgentUpdateParams = {
+  name?: string | null;
+  description?: string | null;
+  avatar?: AgentAvatar | null;
+  file_ids?: string[];
+  instructions?: string | null;
+  tools?: Array<FunctionTool | string>;
+  tool_resources?: ToolResources;
+  provider?: AgentProvider;
+  model?: string | null;
+  model_parameters?: AgentModelParameters;
+  projectIds?: string[];
+  removeProjectIds?: string[];
+  isCollaborative?: boolean;
+} & Pick<
+  Agent,
+  | 'agent_ids'
+  | 'edges'
+  | 'end_after_tools'
+  | 'hide_sequential_outputs'
+  | 'artifacts'
+  | 'recursion_limit'
+  | 'category'
+  | 'support_contact'
+  | 'tool_options'
+>;
+
+export type AgentListParams = {
+  limit?: number;
+  requiredPermission: number;
+  category?: string;
+  search?: string;
+  cursor?: string;
+  promoted?: 0 | 1;
+};
+
+export type AgentListResponse = {
+  object: string;
+  data: Agent[];
+  first_id: string;
+  last_id: string;
+  has_more: boolean;
+  after?: string;
+};
+
+export type AgentFile = {
+  file_id: string;
+  id?: string;
+  temp_file_id?: string;
+  bytes: number;
+  created_at: number;
+  filename: string;
+  object: string;
+  purpose: 'fine-tune' | 'fine-tune-results' | 'agents' | 'agents_output';
 };
 
 /**
@@ -245,25 +470,6 @@ export enum AnnotationTypes {
   FILE_PATH = 'file_path',
 }
 
-export enum ContentTypes {
-  TEXT = 'text',
-  TOOL_CALL = 'tool_call',
-  IMAGE_FILE = 'image_file',
-  ERROR = 'error',
-}
-
-export enum StepTypes {
-  TOOL_CALLS = 'tool_calls',
-  MESSAGE_CREATION = 'message_creation',
-}
-
-export enum ToolCallTypes {
-  FUNCTION = 'function',
-  RETRIEVAL = 'retrieval',
-  FILE_SEARCH = 'file_search',
-  CODE_INTERPRETER = 'code_interpreter',
-}
-
 export enum StepStatus {
   IN_PROGRESS = 'in_progress',
   CANCELLED = 'cancelled',
@@ -295,27 +501,60 @@ export type PartMetadata = {
   asset_pointer?: string;
   status?: string;
   action?: boolean;
+  auth?: string;
+  expires_at?: number;
+  /** Index indicating parallel sibling content (same stepIndex in multi-agent runs) */
+  siblingIndex?: number;
+  /** Agent ID for parallel agent rendering - identifies which agent produced this content */
+  agentId?: string;
+  /** Group ID for parallel content - parts with same groupId are displayed in columns */
+  groupId?: number;
 };
+
+/** Metadata for parallel content rendering - subset of PartMetadata */
+export type ContentMetadata = Pick<PartMetadata, 'agentId' | 'groupId'>;
 
 export type ContentPart = (
   | CodeToolCall
   | RetrievalToolCall
   | FileSearchToolCall
   | FunctionToolCall
+  | Agents.AgentToolCall
   | ImageFile
   | Text
 ) &
   PartMetadata;
 
+export type TextData = (Text & PartMetadata) | undefined;
+
 export type TMessageContentParts =
-  | { type: ContentTypes.ERROR; text: Text & PartMetadata }
-  | { type: ContentTypes.TEXT; text: Text & PartMetadata }
-  | {
+  | ({
+      type: ContentTypes.ERROR;
+      text?: string | TextData;
+      error?: string;
+    } & ContentMetadata)
+  | ({ type: ContentTypes.THINK; think?: string | TextData } & ContentMetadata)
+  | ({
+      type: ContentTypes.TEXT;
+      text?: string | TextData;
+      tool_call_ids?: string[];
+    } & ContentMetadata)
+  | ({
       type: ContentTypes.TOOL_CALL;
-      tool_call: (CodeToolCall | RetrievalToolCall | FileSearchToolCall | FunctionToolCall) &
+      tool_call: (
+        | CodeToolCall
+        | RetrievalToolCall
+        | FileSearchToolCall
+        | FunctionToolCall
+        | Agents.AgentToolCall
+      ) &
         PartMetadata;
-    }
-  | { type: ContentTypes.IMAGE_FILE; image_file: ImageFile & PartMetadata };
+    } & ContentMetadata)
+  | ({ type: ContentTypes.IMAGE_FILE; image_file: ImageFile & PartMetadata } & ContentMetadata)
+  | (Agents.AgentUpdate & ContentMetadata)
+  | (Agents.MessageContentImageUrl & ContentMetadata)
+  | (Agents.MessageContentVideoUrl & ContentMetadata)
+  | (Agents.MessageContentInputAudio & ContentMetadata);
 
 export type StreamContentData = TMessageContentParts & {
   /** The index of the current content part */
@@ -328,6 +567,7 @@ export type TContentData = StreamContentData & {
   messageId: string;
   conversationId: string;
   userMessageId: string;
+  thread_id: string;
   stream?: boolean;
 };
 
@@ -335,53 +575,6 @@ export const actionDelimiter = '_action_';
 export const actionDomainSeparator = '---';
 export const hostImageIdSuffix = '_host_copy';
 export const hostImageNamePrefix = 'host_copy_';
-
-export enum AuthTypeEnum {
-  ServiceHttp = 'service_http',
-  OAuth = 'oauth',
-  None = 'none',
-}
-
-export enum AuthorizationTypeEnum {
-  Bearer = 'bearer',
-  Basic = 'basic',
-  Custom = 'custom',
-}
-
-export enum TokenExchangeMethodEnum {
-  DefaultPost = 'default_post',
-  BasicAuthHeader = 'basic_auth_header',
-}
-
-export type ActionAuth = {
-  authorization_type?: AuthorizationTypeEnum;
-  custom_auth_header?: string;
-  type?: AuthTypeEnum;
-  authorization_content_type?: string;
-  authorization_url?: string;
-  client_url?: string;
-  scope?: string;
-  token_exchange_method?: TokenExchangeMethodEnum;
-};
-
-export type ActionMetadata = {
-  api_key?: string;
-  auth?: ActionAuth;
-  domain?: string;
-  privacy_policy_url?: string;
-  raw_spec?: string;
-  oauth_client_id?: string;
-  oauth_client_secret?: string;
-};
-
-export type Action = {
-  action_id: string;
-  assistant_id: string;
-  type?: string;
-  settings?: Record<string, unknown>;
-  metadata: ActionMetadata;
-  version: number | string;
-};
 
 export type AssistantAvatar = {
   filepath: string;
@@ -391,12 +584,21 @@ export type AssistantAvatar = {
 export type AssistantDocument = {
   user: string;
   assistant_id: string;
+  conversation_starters?: string[];
   avatar?: AssistantAvatar;
   access_level?: number;
   file_ids?: string[];
   actions?: string[];
   createdAt?: Date;
   updatedAt?: Date;
+  append_current_datetime?: boolean;
+};
+
+/* Agent types */
+
+export type AgentAvatar = {
+  filepath: string;
+  source: string;
 };
 
 export enum FilePurpose {

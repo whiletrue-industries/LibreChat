@@ -5,18 +5,14 @@ import supersub from 'remark-supersub';
 import rehypeKatex from 'rehype-katex';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
+import { replaceSpecialVars } from 'librechat-data-provider';
+import { TextareaAutosize, InputCombobox, Button } from '@librechat/client';
 import { useForm, useFieldArray, Controller, useWatch } from 'react-hook-form';
 import type { TPromptGroup } from 'librechat-data-provider';
-import {
-  cn,
-  wrapVariable,
-  defaultTextProps,
-  replaceSpecialVars,
-  extractVariableInfo,
-} from '~/utils';
+import { codeNoExecution } from '~/components/Chat/Messages/Content/MarkdownComponents';
+import { cn, wrapVariable, defaultTextProps, extractVariableInfo } from '~/utils';
 import { useAuthContext, useLocalize, useSubmitMessage } from '~/hooks';
-import { TextareaAutosize, InputCombobox } from '~/components/ui';
-import { code } from '~/components/Chat/Messages/Content/Markdown';
+import { PromptVariableGfm } from '../Markdown';
 
 type FieldType = 'text' | 'select';
 
@@ -115,9 +111,12 @@ export default function VariableForm({
     allVariables.forEach((variable) => {
       const placeholder = `{{${variable}}}`;
       const fieldIndex = variableIndexMap.get(variable) as string | number;
-      const fieldValue = fieldValues[fieldIndex].value as string;
-      const highlightText = fieldValue !== '' ? fieldValue : placeholder;
-      tempText = tempText.replaceAll(placeholder, `**${highlightText}**`);
+      const fieldValue = fieldValues[fieldIndex].value as string | undefined;
+      if (fieldValue === placeholder || fieldValue === '' || !fieldValue) {
+        return;
+      }
+      const highlightText = fieldValue !== '' ? `**${fieldValue}**` : placeholder;
+      tempText = tempText.replaceAll(placeholder, highlightText);
     });
     return tempText;
   };
@@ -141,22 +140,26 @@ export default function VariableForm({
   return (
     <div className="mx-auto p-1 md:container">
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-        <div className="mb-6 max-h-screen max-w-[90vw] overflow-auto rounded-md bg-gray-100 p-4 text-text-secondary dark:bg-gray-700/50 sm:max-w-full md:max-h-80">
+        <div className="mb-6 max-h-screen max-w-[80vw] overflow-auto rounded-md bg-surface-tertiary p-4 text-text-secondary dark:bg-surface-primary sm:max-w-full md:max-h-96">
           <ReactMarkdown
-            remarkPlugins={[supersub, remarkGfm, [remarkMath, { singleDollarTextMath: true }]]}
+            /** @ts-ignore */
+            remarkPlugins={[supersub, remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
             rehypePlugins={[
-              [rehypeKatex, { output: 'mathml' }],
+              /** @ts-ignore */
+              [rehypeKatex],
+              /** @ts-ignore */
               [rehypeHighlight, { ignoreMissing: true }],
             ]}
-            components={{ code }}
-            className="prose dark:prose-invert light dark:text-gray-70 my-1 max-h-[50vh] break-words"
+            /** @ts-ignore */
+            components={{ code: codeNoExecution, p: PromptVariableGfm }}
+            className="markdown prose dark:prose-invert light my-1 max-h-[50vh] max-w-full break-words dark:text-text-secondary"
           >
             {generateHighlightedMarkdown()}
           </ReactMarkdown>
         </div>
         <div className="space-y-4">
           {fields.map((field, index) => (
-            <div key={field.id} className="flex flex-col space-y-2">
+            <div key={field.id} className="relative flex flex-col space-y-2">
               <Controller
                 name={`fields.${index}.value`}
                 control={control}
@@ -165,10 +168,10 @@ export default function VariableForm({
                     return (
                       <InputCombobox
                         options={field.config.options || []}
-                        placeholder={localize('com_ui_enter_var', field.config.variable)}
+                        placeholder={field.config.variable}
                         className={cn(
                           defaultTextProps,
-                          'rounded px-3 py-2 focus:bg-surface-tertiary',
+                          'mb-1 rounded px-3 py-2 focus:bg-surface-tertiary',
                         )}
                         value={value}
                         onChange={onChange}
@@ -178,19 +181,28 @@ export default function VariableForm({
                   }
 
                   return (
-                    <TextareaAutosize
-                      ref={ref}
-                      value={value}
-                      onChange={onChange}
-                      onBlur={onBlur}
-                      id={`fields.${index}.value`}
-                      className={cn(
-                        defaultTextProps,
-                        'rounded px-3 py-2 focus:bg-surface-tertiary',
-                      )}
-                      placeholder={localize('com_ui_enter_var', field.config.variable)}
-                      maxRows={8}
-                    />
+                    <>
+                      <TextareaAutosize
+                        ref={ref}
+                        value={value}
+                        onChange={onChange}
+                        onBlur={onBlur}
+                        id={`fields.${index}.value`}
+                        className={cn(
+                          defaultTextProps,
+                          'peer rounded px-3 py-2 focus:bg-surface-tertiary',
+                        )}
+                        placeholder=""
+                        maxRows={8}
+                        aria-label={field.config.variable}
+                      />
+                      <label
+                        htmlFor={`fields.${index}.value`}
+                        className="absolute left-3 top-0 text-sm text-text-secondary transition-all duration-200 peer-focus:-top-6 peer-focus:left-1 peer-focus:text-xs peer-focus:text-text-primary peer-[:not(:placeholder-shown)]:-top-6 peer-[:not(:placeholder-shown)]:left-1 peer-[:not(:placeholder-shown)]:text-xs"
+                      >
+                        {field.config.variable}
+                      </label>
+                    </>
                   );
                 }}
               />
@@ -198,12 +210,9 @@ export default function VariableForm({
           ))}
         </div>
         <div className="flex justify-end">
-          <button
-            type="submit"
-            className="btn rounded bg-green-500 px-4 py-2 font-bold text-white transition-all hover:bg-green-600"
-          >
+          <Button type="submit" variant="submit" aria-label={localize('com_ui_submit')}>
             {localize('com_ui_submit')}
-          </button>
+          </Button>
         </div>
       </form>
     </div>

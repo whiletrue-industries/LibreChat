@@ -1,109 +1,141 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback } from 'react';
+import { Trans } from 'react-i18next';
+import { QueryKeys } from 'librechat-data-provider';
+import { useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useDeleteConversationMutation } from '~/data-provider';
 import {
+  Button,
+  Spinner,
   OGDialog,
-  OGDialogTrigger,
-  Label,
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '~/components/ui';
-import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
-import { TrashIcon } from '~/components/svg';
+  OGDialogClose,
+  OGDialogTitle,
+  OGDialogHeader,
+  OGDialogContent,
+  useToastContext,
+} from '@librechat/client';
+import type { TMessage } from 'librechat-data-provider';
+import { useDeleteConversationMutation } from '~/data-provider';
 import { useLocalize, useNewConvo } from '~/hooks';
+import { NotificationSeverity } from '~/common';
 
 type DeleteButtonProps = {
   conversationId: string;
   retainView: () => void;
   title: string;
-  className?: string;
   showDeleteDialog?: boolean;
   setShowDeleteDialog?: (value: boolean) => void;
+  triggerRef?: React.RefObject<HTMLButtonElement>;
+  setMenuOpen?: (open: boolean) => void;
 };
+
+export function DeleteConversationDialog({
+  setShowDeleteDialog,
+  conversationId,
+  setMenuOpen,
+  retainView,
+  title,
+}: {
+  setMenuOpen?: (open: boolean) => void;
+  setShowDeleteDialog: (value: boolean) => void;
+  conversationId: string;
+  retainView: () => void;
+  title: string;
+}) {
+  const localize = useLocalize();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { showToast } = useToastContext();
+  const { newConversation } = useNewConvo();
+  const { conversationId: currentConvoId } = useParams();
+
+  const deleteMutation = useDeleteConversationMutation({
+    onSuccess: () => {
+      setShowDeleteDialog(false);
+      if (currentConvoId === conversationId || currentConvoId === 'new') {
+        newConversation();
+        navigate('/c/new', { replace: true });
+      }
+      setMenuOpen?.(false);
+      retainView();
+      showToast({
+        message: localize('com_ui_convo_delete_success'),
+        severity: NotificationSeverity.SUCCESS,
+        showIcon: true,
+      });
+    },
+    onError: () => {
+      showToast({
+        message: localize('com_ui_convo_delete_error'),
+        severity: NotificationSeverity.ERROR,
+        showIcon: true,
+      });
+    },
+  });
+
+  const confirmDelete = useCallback(() => {
+    const messages = queryClient.getQueryData<TMessage[]>([QueryKeys.messages, conversationId]);
+    const thread_id = messages?.[messages.length - 1]?.thread_id;
+    const endpoint = messages?.[messages.length - 1]?.endpoint;
+
+    deleteMutation.mutate({ conversationId, thread_id, endpoint, source: 'button' });
+  }, [conversationId, deleteMutation, queryClient]);
+
+  return (
+    <OGDialogContent
+      className="w-11/12 max-w-md"
+      showCloseButton={false}
+      aria-describedby="delete-conversation-description"
+    >
+      <OGDialogHeader>
+        <OGDialogTitle>{localize('com_ui_delete_conversation')}</OGDialogTitle>
+      </OGDialogHeader>
+      <div id="delete-conversation-description" className="w-full truncate">
+        <Trans
+          i18nKey="com_ui_delete_confirm_strong"
+          values={{ title }}
+          components={{ strong: <strong /> }}
+        />
+      </div>
+      <div className="flex justify-end gap-4 pt-4">
+        <OGDialogClose asChild>
+          <Button aria-label="cancel" variant="outline">
+            {localize('com_ui_cancel')}
+          </Button>
+        </OGDialogClose>
+        <Button variant="destructive" onClick={confirmDelete} disabled={deleteMutation.isLoading}>
+          {deleteMutation.isLoading ? <Spinner /> : localize('com_ui_delete')}
+        </Button>
+      </div>
+    </OGDialogContent>
+  );
+}
 
 export default function DeleteButton({
   conversationId,
   retainView,
   title,
-  className = '',
+  setMenuOpen,
   showDeleteDialog,
   setShowDeleteDialog,
+  triggerRef,
 }: DeleteButtonProps) {
-  const localize = useLocalize();
-  const navigate = useNavigate();
-  const { newConversation } = useNewConvo();
-  const { conversationId: currentConvoId } = useParams();
-  const [open, setOpen] = useState(false);
-  const deleteConvoMutation = useDeleteConversationMutation({
-    onSuccess: () => {
-      if (currentConvoId === conversationId || currentConvoId === 'new') {
-        newConversation();
-        navigate('/c/new', { replace: true });
-      }
-      retainView();
-    },
-  });
+  if (showDeleteDialog === undefined || setShowDeleteDialog === undefined) {
+    return null;
+  }
 
-  const confirmDelete = useCallback(() => {
-    // `thread_id` was removed with the Responses-API migration; deleting
-    // the LibreChat conversation in Mongo is sufficient — any associated
-    // OpenAI Conversation is orphaned server-side and ages out per
-    // OpenAI's retention policy.
-    deleteConvoMutation.mutate({ conversationId, source: 'button' });
-  }, [conversationId, deleteConvoMutation]);
-
-  const dialogContent = (
-    <OGDialogTemplate
-      showCloseButton={false}
-      title={localize('com_ui_delete_conversation')}
-      className="z-[1000] max-w-[450px]"
-      main={
-        <>
-          <div className="flex w-full flex-col items-center gap-2">
-            <div className="grid w-full items-center gap-2">
-              <Label htmlFor="dialog-confirm-delete" className="text-left text-sm font-medium">
-                {localize('com_ui_delete_confirm')} <strong>{title}</strong>
-              </Label>
-            </div>
-          </div>
-        </>
-      }
-      selection={{
-        selectHandler: confirmDelete,
-        selectClasses:
-          'bg-red-700 dark:bg-red-600 hover:bg-red-800 dark:hover:bg-red-800 text-white',
-        selectText: localize('com_ui_delete'),
-      }}
-    />
-  );
-
-  if (showDeleteDialog !== undefined && setShowDeleteDialog !== undefined) {
-    return (
-      <OGDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        {dialogContent}
-      </OGDialog>
-    );
+  if (!conversationId) {
+    return null;
   }
 
   return (
-    <OGDialog open={open} onOpenChange={setOpen}>
-      <TooltipProvider delayDuration={250}>
-        <Tooltip>
-          <OGDialogTrigger asChild>
-            <TooltipTrigger asChild>
-              <button>
-                <TrashIcon className="h-5 w-5" />
-              </button>
-            </TooltipTrigger>
-          </OGDialogTrigger>
-          <TooltipContent side="top" sideOffset={0} className={className}>
-            {localize('com_ui_delete')}
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-      {dialogContent}
+    <OGDialog open={showDeleteDialog!} onOpenChange={setShowDeleteDialog!} triggerRef={triggerRef}>
+      <DeleteConversationDialog
+        setShowDeleteDialog={setShowDeleteDialog}
+        conversationId={conversationId}
+        setMenuOpen={setMenuOpen}
+        retainView={retainView}
+        title={title}
+      />
     </OGDialog>
   );
 }

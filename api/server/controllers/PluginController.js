@@ -1,74 +1,35 @@
-const { promises: fs } = require('fs');
+const { logger } = require('@librechat/data-schemas');
 const { CacheKeys } = require('librechat-data-provider');
-const { addOpenAPISpecs } = require('~/app/clients/tools/util/addOpenAPISpecs');
+const { getToolkitKey, checkPluginAuth, filterUniquePlugins } = require('@librechat/api');
+const { getCachedTools, setCachedTools } = require('~/server/services/Config');
+const { availableTools, toolkits } = require('~/app/clients/tools');
+const { getAppConfig } = require('~/server/services/Config');
 const { getLogStores } = require('~/cache');
-
-/**
- * Filters out duplicate plugins from the list of plugins.
- *
- * @param {TPlugin[]} plugins The list of plugins to filter.
- * @returns {TPlugin[]} The list of plugins with duplicates removed.
- */
-const filterUniquePlugins = (plugins) => {
-  const seen = new Set();
-  return plugins.filter((plugin) => {
-    const duplicate = seen.has(plugin.pluginKey);
-    seen.add(plugin.pluginKey);
-    return !duplicate;
-  });
-};
-
-/**
- * Determines if a plugin is authenticated by checking if all required authentication fields have non-empty values.
- * Supports alternate authentication fields, allowing validation against multiple possible environment variables.
- *
- * @param {TPlugin} plugin The plugin object containing the authentication configuration.
- * @returns {boolean} True if the plugin is authenticated for all required fields, false otherwise.
- */
-const isPluginAuthenticated = (plugin) => {
-  if (!plugin.authConfig || plugin.authConfig.length === 0) {
-    return false;
-  }
-
-  return plugin.authConfig.every((authFieldObj) => {
-    const authFieldOptions = authFieldObj.authField.split('||');
-    let isFieldAuthenticated = false;
-
-    for (const fieldOption of authFieldOptions) {
-      const envValue = process.env[fieldOption];
-      if (envValue && envValue.trim() !== '' && envValue !== 'user_provided') {
-        isFieldAuthenticated = true;
-        break;
-      }
-    }
-
-    return isFieldAuthenticated;
-  });
-};
 
 const getAvailablePluginsController = async (req, res) => {
   try {
-    const cache = getLogStores(CacheKeys.CONFIG_STORE);
+    const cache = getLogStores(CacheKeys.TOOL_CACHE);
     const cachedPlugins = await cache.get(CacheKeys.PLUGINS);
     if (cachedPlugins) {
       res.status(200).json(cachedPlugins);
       return;
     }
 
+    const appConfig = await getAppConfig({ role: req.user?.role });
     /** @type {{ filteredTools: string[], includedTools: string[] }} */
-    const { filteredTools = [], includedTools = [] } = req.app.locals;
-    const pluginManifest = await fs.readFile(req.app.locals.paths.pluginManifest, 'utf8');
-    const jsonData = JSON.parse(pluginManifest);
+    const { filteredTools = [], includedTools = [] } = appConfig;
+    /** @type {import('@librechat/api').LCManifestTool[]} */
+    const pluginManifest = availableTools;
 
-    const uniquePlugins = filterUniquePlugins(jsonData);
+    const uniquePlugins = filterUniquePlugins(pluginManifest);
     let authenticatedPlugins = [];
     for (const plugin of uniquePlugins) {
       authenticatedPlugins.push(
-        isPluginAuthenticated(plugin) ? { ...plugin, authenticated: true } : plugin,
+        checkPluginAuth(plugin) ? { ...plugin, authenticated: true } : plugin,
       );
     }
 
-    let plugins = await addOpenAPISpecs(authenticatedPlugins);
+    let plugins = authenticatedPlugins;
 
     if (includedTools.length > 0) {
       plugins = plugins.filter((plugin) => includedTools.includes(plugin.pluginKey));
@@ -97,34 +58,67 @@ const getAvailablePluginsController = async (req, res) => {
  */
 const getAvailableTools = async (req, res) => {
   try {
-    const cache = getLogStores(CacheKeys.CONFIG_STORE);
-    const cachedTools = await cache.get(CacheKeys.TOOLS);
-    if (cachedTools) {
-      res.status(200).json(cachedTools);
+    const userId = req.user?.id;
+    if (!userId) {
+      logger.warn('[getAvailableTools] User ID not found in request');
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+    const cache = getLogStores(CacheKeys.TOOL_CACHE);
+    const cachedToolsArray = await cache.get(CacheKeys.TOOLS);
+
+    const appConfig = req.config ?? (await getAppConfig({ role: req.user?.role }));
+
+    // Return early if we have cached tools
+    if (cachedToolsArray != null) {
+      res.status(200).json(cachedToolsArray);
       return;
     }
 
-    const pluginManifest = await fs.readFile(req.app.locals.paths.pluginManifest, 'utf8');
+    /** @type {Record<string, FunctionTool> | null} Get tool definitions to filter which tools are actually available */
+    let toolDefinitions = await getCachedTools();
 
-    const jsonData = JSON.parse(pluginManifest);
-    /** @type {TPlugin[]} */
-    const uniquePlugins = filterUniquePlugins(jsonData);
+    if (toolDefinitions == null && appConfig?.availableTools != null) {
+      logger.warn('[getAvailableTools] Tool cache was empty, re-initializing from app config');
+      await setCachedTools(appConfig.availableTools);
+      toolDefinitions = appConfig.availableTools;
+    }
 
+    /** @type {import('@librechat/api').LCManifestTool[]} */
+    let pluginManifest = availableTools;
+
+    /** @type {TPlugin[]} Deduplicate and authenticate plugins */
+    const uniquePlugins = filterUniquePlugins(pluginManifest);
     const authenticatedPlugins = uniquePlugins.map((plugin) => {
-      if (isPluginAuthenticated(plugin)) {
+      if (checkPluginAuth(plugin)) {
         return { ...plugin, authenticated: true };
       } else {
         return plugin;
       }
     });
 
-    const tools = authenticatedPlugins.filter(
-      (plugin) => req.app.locals.availableTools[plugin.pluginKey] !== undefined,
-    );
+    /** Filter plugins based on availability */
+    const toolsOutput = [];
+    for (const plugin of authenticatedPlugins) {
+      const isToolDefined = toolDefinitions?.[plugin.pluginKey] !== undefined;
+      const isToolkit =
+        plugin.toolkit === true &&
+        Object.keys(toolDefinitions ?? {}).some(
+          (key) => getToolkitKey({ toolkits, toolName: key }) === plugin.pluginKey,
+        );
 
-    await cache.set(CacheKeys.TOOLS, tools);
-    res.status(200).json(tools);
+      if (!isToolDefined && !isToolkit) {
+        continue;
+      }
+
+      toolsOutput.push(plugin);
+    }
+
+    const finalTools = filterUniquePlugins(toolsOutput);
+    await cache.set(CacheKeys.TOOLS, finalTools);
+
+    res.status(200).json(finalTools);
   } catch (error) {
+    logger.error('[getAvailableTools]', error);
     res.status(500).json({ message: error.message });
   }
 };

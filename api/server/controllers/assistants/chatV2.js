@@ -1,4 +1,7 @@
 const { v4 } = require('uuid');
+const { sleep } = require('@librechat/agents');
+const { logger } = require('@librechat/data-schemas');
+const { sendEvent, getBalanceConfig, getModelMaxTokens, countTokens } = require('@librechat/api');
 const {
   Time,
   Constants,
@@ -6,71 +9,40 @@ const {
   CacheKeys,
   ContentTypes,
   ToolCallTypes,
+  EModelEndpoint,
   retrievalMimeTypes,
+  AssistantStreamEvents,
 } = require('librechat-data-provider');
 const {
+  initThread,
   recordUsage,
   saveUserMessage,
+  addThreadMetadata,
   saveAssistantMessage,
-  hydrateRecentHistory,
 } = require('~/server/services/Threads');
-const {
-  isContextLengthError,
-  isRateLimitError,
-  retryOnRateLimit,
-  buildRecap,
-} = require('~/server/services/Threads/oversizedConversation');
-const { createOnTextProgress } = require('~/server/services/AssistantService');
-const { sendMessage, isEnabled, countTokens } = require('~/server/utils');
+const { runAssistant, createOnTextProgress } = require('~/server/services/AssistantService');
 const { createErrorHandler } = require('~/server/controllers/assistants/errors');
 const validateAuthor = require('~/server/middleware/assistants/validateAuthor');
-const { ResponseStreamManager } = require('~/server/services/Runs');
-const { getBotConfig } = require('~/server/services/BotConfigService');
+const { createRun, StreamRunManager } = require('~/server/services/Runs');
 const { addTitle } = require('~/server/services/Endpoints/assistants');
+const { createRunBody } = require('~/server/services/createRunBody');
 const { getTransactions } = require('~/models/Transaction');
-const checkBalance = require('~/models/checkBalance');
+const { checkBalance } = require('~/models/balanceMethods');
 const { getConvo } = require('~/models/Conversation');
 const getLogStores = require('~/cache/getLogStores');
-const { getModelMaxTokens } = require('~/utils');
 const { getOpenAIClient } = require('./helpers');
-const { logger } = require('~/config');
-
-const ten_minutes = 1000 * 60 * 10;
 
 /**
  * @route POST /
- * @desc Chat with an assistant via the OpenAI Responses API.
- *
- * The Assistants API chat path (threads/runs) was removed as part of the
- * Responses-API migration; the Assistants API retires 2026-08-26.
- *
- * Each user turn runs `responses.create` **without** a `conversation:`
- * field — we don't use the OpenAI Conversations API. Continuity across
- * turns comes from hydrating the ENTIRE MongoDB history (user +
- * assistant text, tool-call items excluded) into the `input` array via
- * `hydrateRecentHistory`. No length cap is applied.
- *
- * Two failure modes we handle explicitly:
- * - **Rate limit (HTTP 429 / TPM)** — transient. We retry with
- *   exponential backoff + jitter, matching OpenAI's own Tenacity
- *   example (min 1 s, max 60 s, up to 6 attempts).
- * - **Context length exceeded (HTTP 400 / context_length_exceeded)** —
- *   not recoverable. The prompt is genuinely too big; no amount of
- *   retrying helps. Fall through to the recap path immediately.
- *
- * If retries exhaust on a sustained rate limit, or the error was
- * context-length from the start, we build a recap from the same
- * hydrated mongo history and stream it back as the assistant message
- * with a "this conversation is getting too long, consider starting a
- * new one" nudge. Silent truncation mid-conversation is avoided.
- *
+ * @desc Chat with an assistant
  * @access Public
- * @param {Express.Request} req - The request object, containing the request data.
+ * @param {ServerRequest} req - The request object, containing the request data.
  * @param {Express.Response} res - The response object, used to send back a response.
  * @returns {void}
  */
 const chatV2 = async (req, res) => {
   logger.debug('[/assistants/chat/] req.body', req.body);
+  const appConfig = req.config;
 
   /** @type {{files: MongoFile[]}} */
   const {
@@ -82,14 +54,18 @@ const chatV2 = async (req, res) => {
     assistant_id,
     instructions,
     endpointOption,
+    thread_id: _thread_id,
     messageId: _messageId,
     conversationId: convoId,
     parentMessageId: _parentId = Constants.NO_PARENT,
+    clientTimestamp,
   } = req.body;
 
-  /** @type {OpenAIClient} */
+  /** @type {OpenAI} */
   let openai;
-  /** @type {string|undefined} - the current run id (response id under Responses API) */
+  /** @type {string|undefined} - the current thread id */
+  let thread_id = _thread_id;
+  /** @type {string|undefined} - the current run id */
   let run_id;
   /** @type {string|undefined} - the parent messageId */
   let parentMessageId = _parentId;
@@ -121,6 +97,7 @@ const chatV2 = async (req, res) => {
     run_id,
     endpoint,
     cacheKey,
+    thread_id,
     completedRun,
     assistant_id,
     conversationId,
@@ -137,13 +114,19 @@ const chatV2 = async (req, res) => {
       }
     });
 
+    if (convoId && !_thread_id) {
+      completedRun = true;
+      throw new Error('Missing thread_id for existing conversation');
+    }
+
     if (!assistant_id) {
       completedRun = true;
       throw new Error('Missing assistant_id');
     }
 
     const checkBalanceBeforeRun = async () => {
-      if (!isEnabled(process.env.CHECK_BALANCE)) {
+      const balanceConfig = getBalanceConfig(appConfig);
+      if (!balanceConfig?.enabled) {
         return;
       }
       const transactions =
@@ -158,7 +141,7 @@ const chatV2 = async (req, res) => {
       );
 
       // TODO: make promptBuffer a config option; buffer for titles, needs buffer for system instructions
-      const promptBuffer = parentMessageId === Constants.NO_PARENT ? 200 : 0;
+      const promptBuffer = parentMessageId === Constants.NO_PARENT && !_thread_id ? 200 : 0;
       // 5 is added for labels
       let promptTokens = (await countTokens(text + (promptPrefix ?? ''))) + 5;
       promptTokens += totalPreviousTokens + promptBuffer;
@@ -177,11 +160,10 @@ const chatV2 = async (req, res) => {
       });
     };
 
-    const { openai: _openai, client } = await getOpenAIClient({
+    const { openai: _openai } = await getOpenAIClient({
       req,
       res,
       endpointOption,
-      initAppClient: true,
     });
 
     openai = _openai;
@@ -205,22 +187,14 @@ const chatV2 = async (req, res) => {
     };
 
     /** @type {CreateRunBody | undefined} */
-    const body = {
+    const body = createRunBody({
       assistant_id,
       model,
-    };
-
-    if (promptPrefix) {
-      body.additional_instructions = promptPrefix;
-    }
-
-    if (typeof endpointOption.artifactsPrompt === 'string' && endpointOption.artifactsPrompt) {
-      body.additional_instructions = `${body.additional_instructions ?? ''}\n${endpointOption.artifactsPrompt}`.trim();
-    }
-
-    if (instructions) {
-      body.instructions = instructions;
-    }
+      promptPrefix,
+      instructions,
+      endpointOption,
+      clientTimestamp,
+    });
 
     const getRequestFileIds = async () => {
       let thread_file_ids = [];
@@ -273,14 +247,27 @@ const chatV2 = async (req, res) => {
     /** @type {Promise<Run>|undefined} */
     let userMessagePromise;
 
-    const initializeRequest = async () => {
+    const initializeThread = async () => {
       await getRequestFileIds();
+
+      // TODO: may allow multiple messages to be created beforehand in a future update
+      const initThreadBody = {
+        messages: [userMessage],
+        metadata: {
+          user: req.user.id,
+          conversationId,
+        },
+      };
+
+      const result = await initThread({ openai, body: initThreadBody, thread_id });
+      thread_id = result.thread_id;
 
       createOnTextProgress({
         openai,
         conversationId,
         userMessageId,
         messageId: responseMessageId,
+        thread_id,
       });
 
       requestMessage = {
@@ -294,6 +281,7 @@ const chatV2 = async (req, res) => {
         conversationId,
         isCreatedByUser: true,
         assistant_id,
+        thread_id,
         model: assistant_id,
         endpoint,
       };
@@ -317,11 +305,11 @@ const chatV2 = async (req, res) => {
       }
     };
 
-    const promises = [initializeRequest(), checkBalanceBeforeRun()];
+    const promises = [initializeThread(), checkBalanceBeforeRun()];
     await Promise.all(promises);
 
     const sendInitialResponse = () => {
-      sendMessage(res, {
+      sendEvent(res, {
         sync: true,
         conversationId,
         // messages: previousMessages,
@@ -332,168 +320,84 @@ const chatV2 = async (req, res) => {
           parentMessageId: userMessageId,
           conversationId,
           assistant_id,
+          thread_id,
           model: assistant_id,
         },
       });
     };
 
-    /** @type {ResponseStreamManager | undefined} */
+    /** @type {RunResponse | typeof StreamRunManager | undefined} */
     let response;
 
-    const processRun = async () => {
-      // Fetch the BotConfig bundle from botnim-api. Its tool shape is
-      // already the flat Responses-API form, so we pass it straight
-      // through. This replaces the old
-      // `openai.beta.assistants.retrieve(assistant_id)` call — per the
-      // contract at rebuilding-bots/docs/LIBRECHAT_SYNC_CONTRACT.md the
-      // Assistants API has no equivalent `Prompts` REST surface, so
-      // botnim-api re-emits the config from `specs/<bot>/` on every
-      // request and LibreChat caches it briefly.
-      const botSlug = process.env.BOTNIM_BOT_SLUG ?? 'unified';
-      const botEnv = process.env.BOTNIM_ENVIRONMENT ?? 'staging';
-      const botConfig = await getBotConfig({ bot: botSlug, environment: botEnv });
+    const processRun = async (retry = false) => {
+      if (endpoint === EModelEndpoint.azureAssistants) {
+        body.model = openai._options.model;
+        openai.attachedFileIds = attachedFileIds;
+        if (retry) {
+          response = await runAssistant({
+            openai,
+            thread_id,
+            run_id,
+            in_progress: openai.in_progress,
+          });
+          return;
+        }
 
-      // Keep only function tools — the tool-execution loop in
-      // ResponseStreamManager only handles `function_call` output items.
-      // Other tool types (code_interpreter, file_search, …) are dropped
-      // here; if/when we add support they can be re-enabled by removing
-      // this filter.
-      const responsesTools = (botConfig.tools ?? []).filter(
-        (tool) => tool?.type === 'function',
-      );
+        /* NOTE:
+         * By default, a Run will use the model and tools configuration specified in Assistant object,
+         * but you can override most of these when creating the Run for added flexibility:
+         */
+        const run = await createRun({
+          openai,
+          thread_id,
+          body,
+        });
 
-      // BotConfig is the authoritative source for model/instructions/tools
-      // — it's the whole point of the code-managed config pattern. Let
-      // BotConfig override whatever model the UI sent. LibreChat's endpoint
-      // list ships older models (e.g. gpt-4.1) that users may still have
-      // selected in their UI; ignoring those on the server side keeps the
-      // assistant's model in sync with what's defined in specs/<bot>/.
-      // Only fall back to the client-sent value if BotConfig somehow lacks
-      // one, which would indicate a misconfigured spec.
-      const effectiveBody = {
-        ...body,
-        model: botConfig.model ?? body.model,
-        instructions: botConfig.instructions ?? body.instructions ?? undefined,
-        tools: responsesTools,
-      };
+        run_id = run.id;
+        await cache.set(cacheKey, `${thread_id}:${run_id}`, Time.TEN_MINUTES);
+        sendInitialResponse();
 
-      if (typeof botConfig.temperature === 'number') {
-        effectiveBody.temperature = botConfig.temperature;
+        // todo: retry logic
+        response = await runAssistant({ openai, thread_id, run_id });
+        return;
       }
 
-      // Stateless mode — no OpenAI Conversations API. Instead we hydrate
-      // the full MongoDB history (user + assistant text, tool-call items
-      // excluded) into this turn's input so follow-ups like "what about
-      // 2024?" have the prior exchange to point at.
-      //
-      // We deliberately do NOT cap the hydration. Truncating silently is
-      // confusing; users notice when the bot "forgets" things earlier
-      // than they expect. Instead, if the resulting prompt exceeds the
-      // model's TPM / context-length ceiling, we catch the failure below
-      // and tell the user "this conversation is too long — start a new
-      // one, here's a recap." That surfaces the limit honestly and puts
-      // the choice in the user's hands.
-      const priorMessages = await hydrateRecentHistory({
-        conversationId,
-        excludeMessageId: userMessageId,
-      });
-      const messagesInput = [
-        ...priorMessages,
-        { role: 'user', content: text },
-      ];
+      /** @type {{[AssistantStreamEvents.ThreadRunCreated]: (event: ThreadRunCreated) => Promise<void>}} */
+      const handlers = {
+        [AssistantStreamEvents.ThreadRunCreated]: async (event) => {
+          await cache.set(cacheKey, `${thread_id}:${event.data.id}`, Time.TEN_MINUTES);
+          run_id = event.data.id;
+          sendInitialResponse();
+        },
+      };
 
       /** @type {undefined | TAssistantEndpoint} */
-      const config = req.app.locals[endpoint] ?? {};
+      const config = appConfig.endpoints?.[endpoint] ?? {};
       /** @type {undefined | TBaseEndpoint} */
-      const allConfig = req.app.locals.all;
+      const allConfig = appConfig.endpoints?.all;
 
-      const responseStreamManager = new ResponseStreamManager({
+      const streamRunManager = new StreamRunManager({
         req,
         res,
         openai,
-        handlers: {},
+        handlers,
+        thread_id,
         attachedFileIds,
         parentMessageId: userMessageId,
         responseMessage: openai.responseMessage,
         streamRate: allConfig?.streamRate ?? config.streamRate,
+        // streamOptions: {
+
+        // },
       });
 
-      // Send the initial sync response before streaming starts, so the client
-      // receives the placeholder responseMessage immediately.
-      await cache.set(cacheKey, `${conversationId}:${responseMessageId}`, ten_minutes);
-      sendInitialResponse();
+      await streamRunManager.runAssistant({
+        thread_id,
+        body,
+      });
 
-      try {
-        // 429 / TPM: OpenAI's own guide (Example 1, Tenacity) recommends
-        // wait_random_exponential(min=1, max=60) + stop_after_attempt(6).
-        // We mirror that here: up to 6 tries, 1-60 s jittered backoff,
-        // retry ONLY on rate-limit errors. Context-length and every other
-        // failure propagate immediately — waiting doesn't fix a prompt
-        // that's genuinely too large.
-        await retryOnRateLimit(
-          () => responseStreamManager.runResponse({
-            messages: messagesInput,
-            body: effectiveBody,
-          }),
-          {
-            onRetry: (err, attempt, delay) => {
-              logger.warn(
-                '[/assistants/chat/] rate-limit on responses.create (attempt %d); sleeping %dms — %s',
-                attempt + 1, delay, err.message,
-              );
-              // Stream a tool-call-style status bubble to the UI so the
-              // user sees why their message is taking longer than usual.
-              // Fire-and-forget: if emitting fails we shouldn't derail
-              // the retry itself.
-              Promise.resolve(
-                responseStreamManager.emitRetryNotice({
-                  attempt,
-                  delayMs: delay,
-                  reason: 'rate_limit',
-                })
-              ).catch((e) => {
-                logger.warn('[/assistants/chat/] emitRetryNotice failed: %s', e.message);
-              });
-            },
-          },
-        );
-      } catch (err) {
-        // Either: (a) context-length exceeded — prompt too big, never
-        // fixable by retry, show recap; or (b) rate limit still firing
-        // after 6 attempts — show recap too, with an apology; or (c)
-        // something else entirely — let the generic error path handle it.
-        const isContextLen = isContextLengthError(err);
-        const exhaustedRateLimit = isRateLimitError(err);
-        if (!isContextLen && !exhaustedRateLimit) {
-          throw err;
-        }
-        logger.warn(
-          '[/assistants/chat/] conversation too long (%s: %s); returning recap',
-          isContextLen ? 'context_length_exceeded' : 'rate_limit_after_retries',
-          err.message,
-        );
-        const recapText = buildRecap(priorMessages, text);
-        responseStreamManager.intermediateText = recapText;
-        responseStreamManager.run = {
-          id: run_id || `recap_${responseMessageId}`,
-          status: RunStatus.COMPLETED,
-          created_at: Math.floor(Date.now() / 1000),
-        };
-      }
-
-      response = responseStreamManager;
-      response.text = responseStreamManager.intermediateText;
-      run_id = responseStreamManager.responseId;
-
-      const messageCache = getLogStores(CacheKeys.MESSAGES);
-      messageCache.set(
-        responseMessageId,
-        {
-          complete: true,
-          text: response.text,
-        },
-        Time.FIVE_MINUTES,
-      );
+      response = streamRunManager;
+      response.text = streamRunManager.intermediateText;
     };
 
     await processRun();
@@ -507,6 +411,10 @@ const chatV2 = async (req, res) => {
       return res.end();
     }
 
+    if (response.run.status === RunStatus.IN_PROGRESS) {
+      processRun(true);
+    }
+
     completedRun = response.run;
 
     /** @type {ResponseMessage} */
@@ -517,19 +425,19 @@ const chatV2 = async (req, res) => {
       conversationId,
       user: req.user.id,
       assistant_id,
+      thread_id,
       model: assistant_id,
       endpoint,
+      spec: endpointOption.spec,
+      iconURL: endpointOption.iconURL,
     };
 
-    if (response.responseId) {
-      responseMessage.response_id = response.responseId;
-    }
-
-    sendMessage(res, {
+    sendEvent(res, {
       final: true,
       conversation,
       requestMessage: {
         parentMessageId,
+        thread_id,
       },
     });
     res.end();
@@ -539,18 +447,33 @@ const chatV2 = async (req, res) => {
     }
     await saveAssistantMessage(req, { ...responseMessage, model });
 
-    if (parentMessageId === Constants.NO_PARENT) {
+    if (parentMessageId === Constants.NO_PARENT && !_thread_id) {
       addTitle(req, {
         text,
         responseText: response.text,
         conversationId,
-        client,
       });
     }
 
-    // Responses API exposes usage directly on the response object captured
-    // into `response.run.usage`. No thread/run retrieval needed.
-    if (response.run?.usage) {
+    await addThreadMetadata({
+      openai,
+      thread_id,
+      messageId: responseMessage.messageId,
+      messages: response.messages,
+    });
+
+    if (!response.run.usage) {
+      await sleep(3000);
+      completedRun = await openai.beta.threads.runs.retrieve(response.run.id, { thread_id });
+      if (completedRun.usage) {
+        await recordUsage({
+          ...completedRun.usage,
+          user: req.user.id,
+          model: completedRun.model ?? model,
+          conversationId,
+        });
+      }
+    } else {
       await recordUsage({
         ...response.run.usage,
         user: req.user.id,
@@ -558,7 +481,6 @@ const chatV2 = async (req, res) => {
         conversationId,
       });
     }
-
   } catch (error) {
     await handleError(error);
   }

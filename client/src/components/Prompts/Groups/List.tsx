@@ -1,11 +1,13 @@
-import { useNavigate } from 'react-router-dom';
+import { FileText, Plus } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Button, Skeleton } from '@librechat/client';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
-import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type { TPromptGroup, TStartupConfig } from 'librechat-data-provider';
 import DashGroupItem from '~/components/Prompts/Groups/DashGroupItem';
 import ChatGroupItem from '~/components/Prompts/Groups/ChatGroupItem';
+import { useGetStartupConfig } from '~/data-provider';
 import { useLocalize, useHasAccess } from '~/hooks';
-import { Button, Skeleton } from '~/components/ui';
+import { cn } from '~/utils';
 
 export default function List({
   groups = [],
@@ -16,7 +18,6 @@ export default function List({
   isChatRoute: boolean;
   isLoading: boolean;
 }) {
-  const navigate = useNavigate();
   const localize = useLocalize();
   const { data: startupConfig = {} as Partial<TStartupConfig> } = useGetStartupConfig();
   const { instanceProjectId } = startupConfig;
@@ -30,30 +31,44 @@ export default function List({
       {hasCreateAccess && (
         <div className="flex w-full justify-end">
           <Button
+            asChild
             variant="outline"
-            className="mx-2 w-full px-3"
-            onClick={() => navigate('/d/prompts/new')}
+            className={cn('w-full bg-transparent', !isChatRoute && 'mx-2')}
+            aria-label={localize('com_ui_create_prompt')}
           >
-            + {localize('com_ui_create_prompt')}
+            <Link to="/d/prompts/new">
+              <Plus className="size-4" aria-hidden="true" />
+              {localize('com_ui_create_prompt')}
+            </Link>
           </Button>
         </div>
       )}
-      <div className="flex-grow overflow-y-auto">
+      <div className="flex-grow overflow-y-auto" aria-label={localize('com_ui_prompt_groups')}>
         <div className="overflow-y-auto overflow-x-hidden">
           {isLoading && isChatRoute && (
             <Skeleton className="my-2 flex h-[84px] w-full rounded-2xl border-0 px-3 pb-4 pt-3" />
           )}
-          {isLoading && !isChatRoute && (
-            <Skeleton className="w-100 mx-2 my-3 flex h-[72px] rounded-md border-0 p-4" />
-          )}
-          {!isLoading && groups.length === 0 && isChatRoute && (
-            <div className="my-2 flex h-[84px] w-full items-center justify-center rounded-2xl border border-border-light bg-transparent px-3 pb-4 pt-3 text-text-primary">
-              {localize('com_ui_nothing_found')}
-            </div>
-          )}
-          {!isLoading && groups.length === 0 && !isChatRoute && (
-            <div className="w-100 mx-2 my-3 flex h-[72px] items-center justify-center rounded-md border border-border-light bg-transparent p-4 text-text-primary">
-              {localize('com_ui_nothing_found')}
+          {isLoading &&
+            !isChatRoute &&
+            Array.from({ length: 10 }).map((_, index: number) => (
+              <Skeleton key={index} className="w-100 mx-2 my-2 flex h-14 rounded-lg border-0 p-4" />
+            ))}
+          {!isLoading && groups.length === 0 && (
+            <div
+              className={cn(
+                'flex flex-col items-center justify-center rounded-lg border border-border-light bg-transparent p-6 text-center',
+                isChatRoute ? 'my-2' : 'mx-2 my-4',
+              )}
+            >
+              <div className="mb-2 flex size-10 items-center justify-center rounded-full bg-surface-tertiary">
+                <FileText className="size-5 text-text-secondary" aria-hidden="true" />
+              </div>
+              <p className="text-sm font-medium text-text-primary">
+                {localize('com_ui_no_prompts_title')}
+              </p>
+              <p className="mt-0.5 text-xs text-text-secondary">
+                {localize('com_ui_add_first_prompt')}
+              </p>
             </div>
           )}
           {groups.map((group) => {

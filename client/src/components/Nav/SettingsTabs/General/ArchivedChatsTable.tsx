@@ -1,110 +1,354 @@
-import { useMemo, useState } from 'react';
-import { MessageCircle, ArchiveRestore } from 'lucide-react';
-import { useConversationsInfiniteQuery } from '~/data-provider';
-import { useAuthContext, useLocalize, useNavScrolling } from '~/hooks';
-import ArchiveButton from '~/components/Conversations/ConvoOptions/ArchiveButton';
-import DeleteButton from '~/components/Conversations/ConvoOptions/DeleteButton';
-import { Spinner } from '~/components/svg';
-import { cn } from '~/utils';
-import { ConversationListResponse } from 'librechat-data-provider';
+import { useState, useCallback, useMemo, useEffect } from 'react';
+import { Trans } from 'react-i18next';
+import debounce from 'lodash/debounce';
+import { useRecoilValue } from 'recoil';
+import { Link } from 'react-router-dom';
+import {
+  ArrowUp,
+  TrashIcon,
+  ArrowDown,
+  ArrowUpDown,
+  ExternalLink,
+  ArchiveRestore,
+} from 'lucide-react';
+import {
+  Label,
+  Button,
+  Spinner,
+  OGDialog,
+  DataTable,
+  TooltipAnchor,
+  useMediaQuery,
+  OGDialogTitle,
+  OGDialogHeader,
+  useToastContext,
+  OGDialogContent,
+} from '@librechat/client';
+import type { ConversationListParams, TConversation } from 'librechat-data-provider';
+import {
+  useConversationsInfiniteQuery,
+  useDeleteConversationMutation,
+  useArchiveConvoMutation,
+} from '~/data-provider';
+import { MinimalIcon } from '~/components/Endpoints';
+import { NotificationSeverity } from '~/common';
+import { formatDate, logger } from '~/utils';
+import { useLocalize } from '~/hooks';
+import store from '~/store';
 
-export default function ArchivedChatsTable({ className }: { className?: string }) {
+const DEFAULT_PARAMS: ConversationListParams = {
+  isArchived: true,
+  sortBy: 'createdAt',
+  sortDirection: 'desc',
+  search: '',
+};
+
+export default function ArchivedChatsTable({
+  onOpenChange,
+}: {
+  onOpenChange: (isOpen: boolean) => void;
+}) {
   const localize = useLocalize();
-  const { isAuthenticated } = useAuthContext();
-  const [showLoading, setShowLoading] = useState(false);
+  const { showToast } = useToastContext();
+  const searchState = useRecoilValue(store.search);
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const isSmallScreen = useMediaQuery('(max-width: 768px)');
+  const [queryParams, setQueryParams] = useState<ConversationListParams>(DEFAULT_PARAMS);
+  const [deleteConversation, setDeleteConversation] = useState<TConversation | null>(null);
 
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useConversationsInfiniteQuery(
-    { pageNumber: '1', isArchived: true },
-    { enabled: isAuthenticated },
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, refetch, isLoading } =
+    useConversationsInfiniteQuery(queryParams, {
+      staleTime: 0,
+      cacheTime: 5 * 60 * 1000,
+      refetchOnWindowFocus: false,
+      refetchOnMount: false,
+    });
+
+  const handleFilterChange = useCallback((value: string) => {
+    const encodedValue = encodeURIComponent(value.trim());
+    setQueryParams((prev) => ({
+      ...prev,
+      search: encodedValue,
+    }));
+  }, []);
+
+  const debouncedFilterChange = useMemo(
+    () => debounce(handleFilterChange, 300),
+    [handleFilterChange],
   );
 
-  const { containerRef, moveToTop } = useNavScrolling<ConversationListResponse>({
-    setShowLoading,
-    hasNextPage: hasNextPage,
-    fetchNextPage: fetchNextPage,
-    isFetchingNextPage: isFetchingNextPage,
+  useEffect(() => {
+    return () => {
+      debouncedFilterChange.cancel();
+    };
+  }, [debouncedFilterChange]);
+
+  const allConversations = useMemo(() => {
+    if (!data?.pages) {
+      return [];
+    }
+    return data.pages.flatMap((page) => page?.conversations?.filter(Boolean) ?? []);
+  }, [data?.pages]);
+
+  const deleteMutation = useDeleteConversationMutation({
+    onSuccess: async () => {
+      setIsDeleteOpen(false);
+      await refetch();
+      showToast({
+        message: localize('com_ui_convo_delete_success'),
+        severity: NotificationSeverity.SUCCESS,
+        showIcon: true,
+      });
+    },
+    onError: (error: unknown) => {
+      logger.error('Error deleting archived conversation:', error);
+      showToast({
+        message: localize('com_ui_archive_delete_error') as string,
+        severity: NotificationSeverity.ERROR,
+      });
+    },
   });
 
-  const conversations = useMemo(
-    () => data?.pages.flatMap((page) => page.conversations) || [],
-    [data],
+  const unarchiveMutation = useArchiveConvoMutation({
+    onSuccess: async () => {
+      await refetch();
+    },
+    onError: (error: unknown) => {
+      logger.error('Error unarchiving conversation', error);
+      showToast({
+        message: localize('com_ui_unarchive_error') as string,
+        severity: NotificationSeverity.ERROR,
+      });
+    },
+  });
+
+  const handleFetchNextPage = useCallback(async () => {
+    if (!hasNextPage || isFetchingNextPage) {
+      return;
+    }
+    await fetchNextPage();
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
+
+  const columns = useMemo(
+    () => [
+      {
+        accessorKey: 'title',
+        header: ({ column }) => {
+          const sortState = column.getIsSorted();
+          let SortIcon = ArrowUpDown;
+          let ariaSort: 'ascending' | 'descending' | 'none' = 'none';
+          if (sortState === 'desc') {
+            SortIcon = ArrowDown;
+            ariaSort = 'descending';
+          } else if (sortState === 'asc') {
+            SortIcon = ArrowUp;
+            ariaSort = 'ascending';
+          }
+          return (
+            <TooltipAnchor
+              description={localize('com_ui_name_sort')}
+              side="top"
+              render={
+                <Button
+                  variant="ghost"
+                  onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+                  className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
+                  aria-sort={ariaSort}
+                  aria-label={localize('com_ui_name_sort')}
+                  aria-current={sortState ? 'true' : 'false'}
+                >
+                  {localize('com_nav_archive_name')}
+                  <SortIcon className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
+                </Button>
+              }
+            />
+          );
+        },
+        cell: ({ row }) => {
+          const { conversationId, title } = row.original;
+          return (
+            <div className="flex items-center gap-2">
+              <MinimalIcon
+                endpoint={row.original.endpoint}
+                size={28}
+                isCreatedByUser={false}
+                iconClassName="size-4"
+              />
+              <Link
+                to={`/c/${conversationId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="group flex items-center gap-1 truncate rounded-sm text-blue-600 underline decoration-1 underline-offset-2 hover:decoration-2 focus:outline-none focus:ring-2 focus:ring-ring"
+                title={title}
+                aria-label={localize('com_ui_open_archived_chat_new_tab_title', { title })}
+              >
+                <span className="truncate">{title}</span>
+                <ExternalLink
+                  className="size-3 flex-shrink-0 opacity-70 group-hover:opacity-100"
+                  aria-hidden="true"
+                />
+              </Link>
+            </div>
+          );
+        },
+        meta: {
+          size: isSmallScreen ? '70%' : '50%',
+          mobileSize: '70%',
+        },
+      },
+      {
+        accessorKey: 'createdAt',
+        header: ({ column }) => {
+          const sortState = column.getIsSorted();
+          let SortIcon = ArrowUpDown;
+          let ariaSort: 'ascending' | 'descending' | 'none' = 'none';
+          if (sortState === 'desc') {
+            SortIcon = ArrowDown;
+            ariaSort = 'descending';
+          } else if (sortState === 'asc') {
+            SortIcon = ArrowUp;
+            ariaSort = 'ascending';
+          }
+          return (
+            <TooltipAnchor
+              description={localize('com_ui_date_sort')}
+              side="top"
+              render={
+                <Button
+                  variant="ghost"
+                  onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+                  className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
+                  aria-sort={ariaSort}
+                  aria-label={localize('com_ui_date_sort')}
+                  aria-current={sortState ? 'true' : 'false'}
+                >
+                  {localize('com_nav_archive_created_at')}
+                  <SortIcon className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
+                </Button>
+              }
+            />
+          );
+        },
+        cell: ({ row }) => formatDate(row.original.createdAt?.toString() ?? '', isSmallScreen),
+        meta: {
+          size: isSmallScreen ? '30%' : '35%',
+          mobileSize: '30%',
+        },
+      },
+      {
+        accessorKey: 'actions',
+        header: () => (
+          <Label className="px-2 py-0 text-xs sm:px-2 sm:py-2 sm:text-sm">
+            {localize('com_assistants_actions')}
+          </Label>
+        ),
+        cell: ({ row }) => {
+          const conversation = row.original;
+          return (
+            <div className="flex items-center gap-2">
+              <TooltipAnchor
+                description={localize('com_ui_unarchive_conversation')}
+                render={
+                  <Button
+                    variant="ghost"
+                    className="h-8 w-8 p-0 hover:bg-surface-hover"
+                    onClick={() =>
+                      unarchiveMutation.mutate({
+                        conversationId: conversation.conversationId,
+                        isArchived: false,
+                      })
+                    }
+                    title={localize('com_ui_unarchive_conversation')}
+                    aria-label={localize('com_ui_unarchive_conversation')}
+                    disabled={unarchiveMutation.isLoading}
+                  >
+                    {unarchiveMutation.isLoading ? (
+                      <Spinner />
+                    ) : (
+                      <ArchiveRestore className="size-4" />
+                    )}
+                  </Button>
+                }
+              />
+              <TooltipAnchor
+                description={localize('com_ui_delete_conversation_tooltip')}
+                render={
+                  <Button
+                    variant="ghost"
+                    className="h-8 w-8 p-0 hover:bg-surface-hover"
+                    onClick={() => {
+                      setDeleteConversation(row.original);
+                      setIsDeleteOpen(true);
+                    }}
+                    title={localize('com_ui_delete_conversation_tooltip')}
+                    aria-label={localize('com_ui_delete_conversation_tooltip')}
+                  >
+                    <TrashIcon className="size-4" />
+                  </Button>
+                }
+              />
+            </div>
+          );
+        },
+        meta: {
+          size: '15%',
+          mobileSize: '25%',
+        },
+      },
+    ],
+    [isSmallScreen, localize, unarchiveMutation],
   );
 
-  const classProp: { className?: string } = {
-    className: 'p-1 hover:text-black dark:hover:text-white',
-  };
-  if (className) {
-    classProp.className = className;
-  }
-
-  if (!conversations || conversations.length === 0) {
-    return <div className="text-gray-300">{localize('com_nav_archived_chats_empty')}</div>;
-  }
-
   return (
-    <div
-      className={cn(
-        'grid w-full gap-2',
-        'flex-1 flex-col overflow-y-auto pr-2 transition-opacity duration-500',
-        'max-h-[350px]',
-      )}
-      ref={containerRef}
-    >
-      <table className="table-fixed text-left">
-        <thead className="sticky top-0 bg-white dark:bg-gray-700">
-          <tr className="border-b border-gray-200 text-sm font-semibold text-gray-500 dark:border-white/10 dark:text-gray-200">
-            <th className="p-3">{localize('com_nav_archive_name')}</th>
-            <th className="p-3">{localize('com_nav_archive_created_at')}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {conversations.map((conversation) => (
-            <tr
-              key={conversation.conversationId}
-              className="border-b border-gray-200 text-sm font-normal dark:border-white/10"
+    <>
+      <DataTable
+        columns={columns}
+        data={allConversations}
+        filterColumn="title"
+        onFilterChange={debouncedFilterChange}
+        filterValue={queryParams.search}
+        fetchNextPage={handleFetchNextPage}
+        hasNextPage={hasNextPage}
+        isFetchingNextPage={isFetchingNextPage}
+        isLoading={isLoading}
+        showCheckboxes={false}
+        enableSearch={searchState.enabled === true}
+      />
+
+      <OGDialog open={isDeleteOpen} onOpenChange={onOpenChange}>
+        <OGDialogContent
+          title={localize('com_ui_delete_confirm', {
+            title: deleteConversation?.title ?? localize('com_ui_untitled'),
+          })}
+          className="w-11/12 max-w-md"
+        >
+          <OGDialogHeader>
+            <OGDialogTitle>
+              <Trans
+                i18nKey="com_ui_delete_confirm_strong"
+                values={{ title: deleteConversation?.title }}
+                components={{ strong: <strong /> }}
+              />
+            </OGDialogTitle>
+          </OGDialogHeader>
+          <div className="flex justify-end gap-4 pt-4">
+            <Button aria-label="cancel" variant="outline" onClick={() => setIsDeleteOpen(false)}>
+              {localize('com_ui_cancel')}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() =>
+                deleteMutation.mutate({
+                  conversationId: deleteConversation?.conversationId ?? '',
+                })
+              }
+              disabled={deleteMutation.isLoading}
             >
-              <td className="flex items-center py-3 text-blue-800/70 dark:text-blue-500">
-                <MessageCircle className="mr-1 h-5 w-5" />
-                {conversation.title}
-              </td>
-              <td className="p-1">
-                <div className="flex justify-between">
-                  <div className="flex justify-start dark:text-gray-200">
-                    {new Date(conversation.createdAt).toLocaleDateString('en-US', {
-                      month: 'long',
-                      day: 'numeric',
-                      year: 'numeric',
-                    })}
-                  </div>
-                  <div className="ml-auto mr-4 flex items-center justify-end gap-1 text-gray-400">
-                    {conversation.conversationId && (
-                      <>
-                        <ArchiveButton
-                          className="hover:text-black dark:hover:text-white"
-                          conversationId={conversation.conversationId}
-                          retainView={moveToTop}
-                          shouldArchive={false}
-                          icon={<ArchiveRestore className="h-4 w-4 hover:text-gray-300" />}
-                        />
-                        <div className="h-5 w-5 hover:text-gray-300">
-                          <DeleteButton
-                            conversationId={conversation.conversationId}
-                            retainView={moveToTop}
-                            title={conversation.title ?? ''}
-                          />
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </div>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {(isFetchingNextPage || showLoading) && (
-        <Spinner className={cn('m-1 mx-auto mb-4 h-4 w-4 text-black dark:text-white')} />
-      )}
-    </div>
+              {deleteMutation.isLoading ? <Spinner /> : localize('com_ui_delete')}
+            </Button>
+          </div>
+        </OGDialogContent>
+      </OGDialog>
+    </>
   );
 }

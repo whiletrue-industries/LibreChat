@@ -1,8 +1,10 @@
 import download from 'downloadjs';
 import { useCallback } from 'react';
+import { useParams } from 'react-router-dom';
 import exportFromJSON from 'export-from-json';
 import { useQueryClient } from '@tanstack/react-query';
 import {
+  buildTree,
   QueryKeys,
   ContentTypes,
   ToolCallTypes,
@@ -10,15 +12,20 @@ import {
   isImageVisionTool,
 } from 'librechat-data-provider';
 import type {
+  TMessageContentParts,
+  TConversation,
   TMessage,
   TPreset,
-  TConversation,
-  TMessageContentParts,
 } from 'librechat-data-provider';
 import useBuildMessageTree from '~/hooks/Messages/useBuildMessageTree';
 import { useScreenshot } from '~/hooks/ScreenshotContext';
-import { cleanupPreset, buildTree } from '~/utils';
-import { useParams } from 'react-router-dom';
+import { cleanupPreset } from '~/utils';
+
+type ExportValues = {
+  fieldName: string;
+  fieldValues: string[];
+};
+type ExportEntries = ExportValues[];
 
 export default function useExportConversation({
   conversation,
@@ -42,13 +49,14 @@ export default function useExportConversation({
   const { conversationId: paramId } = useParams();
 
   const getMessageTree = useCallback(() => {
-    const queryParam = paramId === 'new' ? paramId : conversation?.conversationId ?? paramId ?? '';
+    const queryParam =
+      paramId === 'new' ? paramId : (conversation?.conversationId ?? paramId ?? '');
     const messages = queryClient.getQueryData<TMessage[]>([QueryKeys.messages, queryParam]) ?? [];
     const dataTree = buildTree({ messages });
-    return dataTree?.length === 0 ? null : dataTree ?? null;
+    return dataTree?.length === 0 ? null : (dataTree ?? null);
   }, [paramId, conversation?.conversationId, queryClient]);
 
-  const getMessageText = (message: TMessage, format = 'text') => {
+  const getMessageText = (message: Partial<TMessage> | undefined, format = 'text') => {
     if (!message) {
       return '';
     }
@@ -61,11 +69,13 @@ export default function useExportConversation({
     };
 
     if (!message.content) {
-      return formatText(message.sender, message.text);
+      return formatText(message.sender || '', message.text || '');
     }
 
     return message.content
-      .map((content) => getMessageContent(message.sender, content))
+      .filter((content) => content != null)
+      .map((content) => getMessageContent(message.sender || '', content))
+      .filter((text) => text.length > 0)
       .map((text) => {
         return formatText(text[0], text[1]);
       })
@@ -77,19 +87,29 @@ export default function useExportConversation({
    * Currently, content whose type is `TOOL_CALL` basically returns JSON as is.
    * In the future, different formatted text may be returned for each type.
    */
-  const getMessageContent = (sender: string, content: TMessageContentParts): string[] => {
+  const getMessageContent = (sender: string, content?: TMessageContentParts): string[] => {
     if (!content) {
       return [];
     }
 
     if (content.type === ContentTypes.ERROR) {
       // ERROR
-      return [sender, content[ContentTypes.TEXT].value];
+      return [
+        sender,
+        typeof content[ContentTypes.TEXT] === 'object'
+          ? (content[ContentTypes.TEXT].value ?? '')
+          : (content[ContentTypes.TEXT] ?? ''),
+      ];
     }
 
     if (content.type === ContentTypes.TEXT) {
       // TEXT
-      return [sender, content[ContentTypes.TEXT].value];
+      const textPart = content[ContentTypes.TEXT];
+      const text = typeof textPart === 'string' ? textPart : (textPart?.value ?? '');
+      if (text.trim().length === 0) {
+        return [];
+      }
+      return [sender, text];
     }
 
     if (content.type === ContentTypes.TOOL_CALL) {
@@ -148,18 +168,21 @@ export default function useExportConversation({
   };
 
   const exportCSV = async () => {
-    const data: TMessage[] = [];
+    const data: Partial<TMessage>[] = [];
 
     const messages = await buildMessageTree({
       messageId: conversation?.conversationId,
       message: null,
       messages: getMessageTree(),
-      branches: !!exportBranches,
+      branches: Boolean(exportBranches),
       recursive: false,
     });
 
     if (Array.isArray(messages)) {
       for (const message of messages) {
+        if (!message) {
+          continue;
+        }
         data.push(message);
       }
     } else {
@@ -171,7 +194,7 @@ export default function useExportConversation({
       fileName: filename,
       extension: 'csv',
       exportType: exportFromJSON.types.csv,
-      beforeTableEncode: (entries) => [
+      beforeTableEncode: (entries: ExportEntries | undefined) => [
         {
           fieldName: 'sender',
           fieldValues: entries?.find((e) => e.fieldName == 'sender')?.fieldValues ?? [],
@@ -216,7 +239,7 @@ export default function useExportConversation({
       `- title: ${conversation?.title}\n` +
       `- exportAt: ${new Date().toTimeString()}\n`;
 
-    if (includeOptions) {
+    if (includeOptions === true) {
       data += '\n## Options\n';
       const options = cleanupPreset({ preset: conversation as TPreset });
 
@@ -237,10 +260,10 @@ export default function useExportConversation({
     if (Array.isArray(messages)) {
       for (const message of messages) {
         data += `${getMessageText(message, 'md')}\n`;
-        if (message.error) {
+        if (message?.error) {
           data += '*(This is an error message)*\n';
         }
-        if (message.unfinished) {
+        if (message?.unfinished === true) {
           data += '*(This is an unfinished message)*\n';
         }
         data += '\n\n';
@@ -250,7 +273,7 @@ export default function useExportConversation({
       if (messages.error) {
         data += '*(This is an error message)*\n';
       }
-      if (messages.unfinished) {
+      if (messages.unfinished === true) {
         data += '*(This is an unfinished message)*\n';
       }
     }
@@ -272,7 +295,7 @@ export default function useExportConversation({
       `title: ${conversation?.title}\n` +
       `exportAt: ${new Date().toTimeString()}\n`;
 
-    if (includeOptions) {
+    if (includeOptions === true) {
       data += '\nOptions\n########################\n';
       const options = cleanupPreset({ preset: conversation as TPreset });
 
@@ -293,10 +316,10 @@ export default function useExportConversation({
     if (Array.isArray(messages)) {
       for (const message of messages) {
         data += `${getMessageText(message)}\n`;
-        if (message.error) {
+        if (message?.error) {
           data += '(This is an error message)\n';
         }
-        if (message.unfinished) {
+        if (message?.unfinished === true) {
           data += '(This is an unfinished message)\n';
         }
         data += '\n\n';
@@ -306,7 +329,7 @@ export default function useExportConversation({
       if (messages.error) {
         data += '(This is an error message)\n';
       }
-      if (messages.unfinished) {
+      if (messages.unfinished === true) {
         data += '(This is an unfinished message)\n';
       }
     }
@@ -329,7 +352,7 @@ export default function useExportConversation({
       recursive: recursive,
     };
 
-    if (includeOptions) {
+    if (includeOptions === true) {
       data['options'] = cleanupPreset({ preset: conversation as TPreset });
     }
 
@@ -337,22 +360,20 @@ export default function useExportConversation({
       messageId: conversation?.conversationId,
       message: null,
       messages: getMessageTree(),
-      branches: !!exportBranches,
-      recursive: !!recursive,
+      branches: Boolean(exportBranches),
+      recursive: Boolean(recursive),
     });
 
-    if (recursive && !Array.isArray(messages)) {
+    if (recursive === true && !Array.isArray(messages)) {
       data['messagesTree'] = messages.children;
     } else {
       data['messages'] = messages;
     }
 
-    exportFromJSON({
-      data: data,
-      fileName: filename,
-      extension: 'json',
-      exportType: exportFromJSON.types.json,
-    });
+    /** Use JSON.stringify without indentation to minimize file size for deeply nested recursive exports */
+    const jsonString = JSON.stringify(data);
+    const blob = new Blob([jsonString], { type: 'application/json;charset=utf-8' });
+    download(blob, `${filename}.json`, 'application/json');
   };
 
   const exportConversation = () => {

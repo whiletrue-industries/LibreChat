@@ -1,22 +1,29 @@
-import { parseConvo, EModelEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
-import type { TConversation } from 'librechat-data-provider';
-import getLocalStorageItems from './getLocalStorageItems';
+import {
+  parseConvo,
+  EModelEndpoint,
+  isAgentsEndpoint,
+  isEphemeralAgentId,
+  isAssistantsEndpoint,
+} from 'librechat-data-provider';
+import type { TConversation, EndpointSchemaKey } from 'librechat-data-provider';
+import { clearModelForNonEphemeralAgent } from './endpoints';
+import { getLocalStorageItems } from './localStorage';
 
 const buildDefaultConvo = ({
-  conversation,
-  endpoint,
   models,
+  conversation,
+  endpoint = null,
   lastConversationSetup,
+  defaultParamsEndpoint,
 }: {
-  conversation: TConversation;
-  endpoint: EModelEndpoint;
   models: string[];
-  // TODO: fix this type as we should allow undefined
-  lastConversationSetup: TConversation;
-}) => {
-  const { lastSelectedModel, lastSelectedTools, lastBingSettings } = getLocalStorageItems();
-  const { jailbreak, toneStyle } = lastBingSettings;
-  const endpointType = lastConversationSetup?.endpointType ?? conversation?.endpointType;
+  conversation: TConversation;
+  endpoint?: EModelEndpoint | null;
+  lastConversationSetup: TConversation | null;
+  defaultParamsEndpoint?: string | null;
+}): TConversation => {
+  const { lastSelectedModel, lastSelectedTools } = getLocalStorageItems();
+  const endpointType = lastConversationSetup?.endpointType ?? conversation.endpointType;
 
   if (!endpoint) {
     return {
@@ -27,13 +34,9 @@ const buildDefaultConvo = ({
   }
 
   const availableModels = models;
-  const model = lastConversationSetup?.model ?? lastSelectedModel?.[endpoint];
-  const secondaryModel =
-    endpoint === EModelEndpoint.gptPlugins
-      ? lastConversationSetup?.agentOptions?.model ?? lastSelectedModel?.secondaryModel
-      : null;
+  const model = lastConversationSetup?.model ?? lastSelectedModel?.[endpoint] ?? '';
 
-  let possibleModels: string[], secondaryModels: string[];
+  let possibleModels: string[];
 
   if (availableModels.includes(model)) {
     possibleModels = [model, ...availableModels];
@@ -41,20 +44,14 @@ const buildDefaultConvo = ({
     possibleModels = [...availableModels];
   }
 
-  if (secondaryModel && availableModels.includes(secondaryModel)) {
-    secondaryModels = [secondaryModel, ...availableModels];
-  } else {
-    secondaryModels = [...availableModels];
-  }
-
   const convo = parseConvo({
-    endpoint,
-    endpointType,
+    endpoint: endpoint as EndpointSchemaKey,
+    endpointType: endpointType as EndpointSchemaKey,
     conversation: lastConversationSetup,
     possibleValues: {
       models: possibleModels,
-      secondaryModels,
     },
+    defaultParamsEndpoint,
   });
 
   const defaultConvo = {
@@ -65,13 +62,27 @@ const buildDefaultConvo = ({
   };
 
   // Ensures assistant_id is always defined
-  if (isAssistantsEndpoint(endpoint) && !defaultConvo.assistant_id && convo.assistant_id) {
-    defaultConvo.assistant_id = convo.assistant_id;
+  const assistantId = convo?.assistant_id ?? conversation?.assistant_id ?? '';
+  const defaultAssistantId = lastConversationSetup?.assistant_id ?? '';
+  if (isAssistantsEndpoint(endpoint) && !defaultAssistantId && assistantId) {
+    defaultConvo.assistant_id = assistantId;
   }
 
+  // Ensures agent_id is always defined
+  const agentId = convo?.agent_id ?? '';
+  const defaultAgentId = lastConversationSetup?.agent_id ?? '';
+  if (
+    isAgentsEndpoint(endpoint) &&
+    agentId &&
+    (!defaultAgentId || isEphemeralAgentId(defaultAgentId))
+  ) {
+    defaultConvo.agent_id = agentId;
+  }
+
+  // Clear model for non-ephemeral agents - agents use their configured model internally
+  clearModelForNonEphemeralAgent(defaultConvo);
+
   defaultConvo.tools = lastConversationSetup?.tools ?? lastSelectedTools ?? defaultConvo.tools;
-  defaultConvo.jailbreak = jailbreak ?? defaultConvo.jailbreak;
-  defaultConvo.toneStyle = toneStyle ?? defaultConvo.toneStyle;
 
   return defaultConvo;
 };

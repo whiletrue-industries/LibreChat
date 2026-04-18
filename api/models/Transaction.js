@@ -1,168 +1,202 @@
-const mongoose = require('mongoose');
-const { isEnabled } = require('~/server/utils/handleText');
-const transactionSchema = require('./schema/transaction');
+const { logger, CANCEL_RATE } = require('@librechat/data-schemas');
 const { getMultiplier, getCacheMultiplier } = require('./tx');
-const { logger } = require('~/config');
-const Balance = require('./Balance');
-const cancelRate = 1.15;
+const { Transaction } = require('~/db/models');
+const { updateBalance } = require('~/models');
 
 /** Method to calculate and set the tokenValue for a transaction */
-transactionSchema.methods.calculateTokenValue = function () {
-  if (!this.valueKey || !this.tokenType) {
-    this.tokenValue = this.rawAmount;
+function calculateTokenValue(txn) {
+  const { valueKey, tokenType, model, endpointTokenConfig, inputTokenCount } = txn;
+  const multiplier = Math.abs(
+    getMultiplier({ valueKey, tokenType, model, endpointTokenConfig, inputTokenCount }),
+  );
+  txn.rate = multiplier;
+  txn.tokenValue = txn.rawAmount * multiplier;
+  if (txn.context && txn.tokenType === 'completion' && txn.context === 'incomplete') {
+    txn.tokenValue = Math.ceil(txn.tokenValue * CANCEL_RATE);
+    txn.rate *= CANCEL_RATE;
   }
-  const { valueKey, tokenType, model, endpointTokenConfig } = this;
-  const multiplier = Math.abs(getMultiplier({ valueKey, tokenType, model, endpointTokenConfig }));
-  this.rate = multiplier;
-  this.tokenValue = this.rawAmount * multiplier;
-  if (this.context && this.tokenType === 'completion' && this.context === 'incomplete') {
-    this.tokenValue = Math.ceil(this.tokenValue * cancelRate);
-    this.rate *= cancelRate;
+}
+
+/**
+ * New static method to create an auto-refill transaction that does NOT trigger a balance update.
+ * @param {object} txData - Transaction data.
+ * @param {string} txData.user - The user ID.
+ * @param {string} txData.tokenType - The type of token.
+ * @param {string} txData.context - The context of the transaction.
+ * @param {number} txData.rawAmount - The raw amount of tokens.
+ * @returns {Promise<object>} - The created transaction.
+ */
+async function createAutoRefillTransaction(txData) {
+  if (txData.rawAmount != null && isNaN(txData.rawAmount)) {
+    return;
   }
-};
+  const transaction = new Transaction(txData);
+  transaction.endpointTokenConfig = txData.endpointTokenConfig;
+  transaction.inputTokenCount = txData.inputTokenCount;
+  calculateTokenValue(transaction);
+  await transaction.save();
+
+  const balanceResponse = await updateBalance({
+    user: transaction.user,
+    incrementValue: txData.rawAmount,
+    setValues: { lastRefill: new Date() },
+  });
+  const result = {
+    rate: transaction.rate,
+    user: transaction.user.toString(),
+    balance: balanceResponse.tokenCredits,
+  };
+  logger.debug('[Balance.check] Auto-refill performed', result);
+  result.transaction = transaction;
+  return result;
+}
 
 /**
  * Static method to create a transaction and update the balance
- * @param {txData} txData - Transaction data.
+ * @param {txData} _txData - Transaction data.
  */
-transactionSchema.statics.create = async function (txData) {
-  const Transaction = this;
+async function createTransaction(_txData) {
+  const { balance, transactions, ...txData } = _txData;
+  if (txData.rawAmount != null && isNaN(txData.rawAmount)) {
+    return;
+  }
+
+  if (transactions?.enabled === false) {
+    return;
+  }
 
   const transaction = new Transaction(txData);
   transaction.endpointTokenConfig = txData.endpointTokenConfig;
-  transaction.calculateTokenValue();
+  transaction.inputTokenCount = txData.inputTokenCount;
+  calculateTokenValue(transaction);
 
   await transaction.save();
-
-  if (!isEnabled(process.env.CHECK_BALANCE)) {
+  if (!balance?.enabled) {
     return;
   }
 
-  let balance = await Balance.findOne({ user: transaction.user }).lean();
   let incrementValue = transaction.tokenValue;
-
-  if (balance && balance?.tokenCredits + incrementValue < 0) {
-    incrementValue = -balance.tokenCredits;
-  }
-
-  balance = await Balance.findOneAndUpdate(
-    { user: transaction.user },
-    { $inc: { tokenCredits: incrementValue } },
-    { upsert: true, new: true },
-  ).lean();
+  const balanceResponse = await updateBalance({
+    user: transaction.user,
+    incrementValue,
+  });
 
   return {
     rate: transaction.rate,
     user: transaction.user.toString(),
-    balance: balance.tokenCredits,
+    balance: balanceResponse.tokenCredits,
     [transaction.tokenType]: incrementValue,
   };
-};
+}
 
 /**
  * Static method to create a structured transaction and update the balance
- * @param {txData} txData - Transaction data.
+ * @param {txData} _txData - Transaction data.
  */
-transactionSchema.statics.createStructured = async function (txData) {
-  const Transaction = this;
-
-  const transaction = new Transaction({
-    ...txData,
-    endpointTokenConfig: txData.endpointTokenConfig,
-  });
-
-  transaction.calculateStructuredTokenValue();
-
-  await transaction.save();
-
-  if (!isEnabled(process.env.CHECK_BALANCE)) {
+async function createStructuredTransaction(_txData) {
+  const { balance, transactions, ...txData } = _txData;
+  if (transactions?.enabled === false) {
     return;
   }
 
-  let balance = await Balance.findOne({ user: transaction.user }).lean();
-  let incrementValue = transaction.tokenValue;
+  const transaction = new Transaction(txData);
+  transaction.endpointTokenConfig = txData.endpointTokenConfig;
+  transaction.inputTokenCount = txData.inputTokenCount;
 
-  if (balance && balance?.tokenCredits + incrementValue < 0) {
-    incrementValue = -balance.tokenCredits;
+  calculateStructuredTokenValue(transaction);
+
+  await transaction.save();
+
+  if (!balance?.enabled) {
+    return;
   }
 
-  balance = await Balance.findOneAndUpdate(
-    { user: transaction.user },
-    { $inc: { tokenCredits: incrementValue } },
-    { upsert: true, new: true },
-  ).lean();
+  let incrementValue = transaction.tokenValue;
+
+  const balanceResponse = await updateBalance({
+    user: transaction.user,
+    incrementValue,
+  });
 
   return {
     rate: transaction.rate,
     user: transaction.user.toString(),
-    balance: balance.tokenCredits,
+    balance: balanceResponse.tokenCredits,
     [transaction.tokenType]: incrementValue,
   };
-};
+}
 
 /** Method to calculate token value for structured tokens */
-transactionSchema.methods.calculateStructuredTokenValue = function () {
-  if (!this.tokenType) {
-    this.tokenValue = this.rawAmount;
+function calculateStructuredTokenValue(txn) {
+  if (!txn.tokenType) {
+    txn.tokenValue = txn.rawAmount;
     return;
   }
 
-  const { model, endpointTokenConfig } = this;
+  const { model, endpointTokenConfig, inputTokenCount } = txn;
 
-  if (this.tokenType === 'prompt') {
-    const inputMultiplier = getMultiplier({ tokenType: 'prompt', model, endpointTokenConfig });
+  if (txn.tokenType === 'prompt') {
+    const inputMultiplier = getMultiplier({
+      tokenType: 'prompt',
+      model,
+      endpointTokenConfig,
+      inputTokenCount,
+    });
     const writeMultiplier =
       getCacheMultiplier({ cacheType: 'write', model, endpointTokenConfig }) ?? inputMultiplier;
     const readMultiplier =
       getCacheMultiplier({ cacheType: 'read', model, endpointTokenConfig }) ?? inputMultiplier;
 
-    this.rateDetail = {
+    txn.rateDetail = {
       input: inputMultiplier,
       write: writeMultiplier,
       read: readMultiplier,
     };
 
     const totalPromptTokens =
-      Math.abs(this.inputTokens || 0) +
-      Math.abs(this.writeTokens || 0) +
-      Math.abs(this.readTokens || 0);
+      Math.abs(txn.inputTokens || 0) +
+      Math.abs(txn.writeTokens || 0) +
+      Math.abs(txn.readTokens || 0);
 
     if (totalPromptTokens > 0) {
-      this.rate =
-        (Math.abs(inputMultiplier * (this.inputTokens || 0)) +
-          Math.abs(writeMultiplier * (this.writeTokens || 0)) +
-          Math.abs(readMultiplier * (this.readTokens || 0))) /
+      txn.rate =
+        (Math.abs(inputMultiplier * (txn.inputTokens || 0)) +
+          Math.abs(writeMultiplier * (txn.writeTokens || 0)) +
+          Math.abs(readMultiplier * (txn.readTokens || 0))) /
         totalPromptTokens;
     } else {
-      this.rate = Math.abs(inputMultiplier); // Default to input rate if no tokens
+      txn.rate = Math.abs(inputMultiplier); // Default to input rate if no tokens
     }
 
-    this.tokenValue = -(
-      Math.abs(this.inputTokens || 0) * inputMultiplier +
-      Math.abs(this.writeTokens || 0) * writeMultiplier +
-      Math.abs(this.readTokens || 0) * readMultiplier
+    txn.tokenValue = -(
+      Math.abs(txn.inputTokens || 0) * inputMultiplier +
+      Math.abs(txn.writeTokens || 0) * writeMultiplier +
+      Math.abs(txn.readTokens || 0) * readMultiplier
     );
 
-    this.rawAmount = -totalPromptTokens;
-  } else if (this.tokenType === 'completion') {
-    const multiplier = getMultiplier({ tokenType: this.tokenType, model, endpointTokenConfig });
-    this.rate = Math.abs(multiplier);
-    this.tokenValue = -Math.abs(this.rawAmount) * multiplier;
-    this.rawAmount = -Math.abs(this.rawAmount);
+    txn.rawAmount = -totalPromptTokens;
+  } else if (txn.tokenType === 'completion') {
+    const multiplier = getMultiplier({
+      tokenType: txn.tokenType,
+      model,
+      endpointTokenConfig,
+      inputTokenCount,
+    });
+    txn.rate = Math.abs(multiplier);
+    txn.tokenValue = -Math.abs(txn.rawAmount) * multiplier;
+    txn.rawAmount = -Math.abs(txn.rawAmount);
   }
 
-  if (this.context && this.tokenType === 'completion' && this.context === 'incomplete') {
-    this.tokenValue = Math.ceil(this.tokenValue * cancelRate);
-    this.rate *= cancelRate;
-    if (this.rateDetail) {
-      this.rateDetail = Object.fromEntries(
-        Object.entries(this.rateDetail).map(([k, v]) => [k, v * cancelRate]),
+  if (txn.context && txn.tokenType === 'completion' && txn.context === 'incomplete') {
+    txn.tokenValue = Math.ceil(txn.tokenValue * CANCEL_RATE);
+    txn.rate *= CANCEL_RATE;
+    if (txn.rateDetail) {
+      txn.rateDetail = Object.fromEntries(
+        Object.entries(txn.rateDetail).map(([k, v]) => [k, v * CANCEL_RATE]),
       );
     }
   }
-};
-
-const Transaction = mongoose.model('Transaction', transactionSchema);
+}
 
 /**
  * Queries and retrieves transactions based on a given filter.
@@ -181,4 +215,9 @@ async function getTransactions(filter) {
   }
 }
 
-module.exports = { Transaction, getTransactions };
+module.exports = {
+  getTransactions,
+  createTransaction,
+  createAutoRefillTransaction,
+  createStructuredTransaction,
+};

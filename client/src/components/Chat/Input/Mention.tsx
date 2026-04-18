@@ -1,14 +1,17 @@
 import { useState, useRef, useEffect } from 'react';
+import { useCombobox } from '@librechat/client';
+import { AutoSizer, List } from 'react-virtualized';
 import { EModelEndpoint } from 'librechat-data-provider';
-import { useRecoilValue, type SetterOrUpdater } from 'recoil';
 import type { MentionOption, ConvoGenerator } from '~/common';
+import type { SetterOrUpdater } from 'recoil';
+import { useGetConversation, useLocalize, TranslationKeys } from '~/hooks';
 import useSelectMention from '~/hooks/Input/useSelectMention';
 import { useAssistantsMapContext } from '~/Providers';
 import useMentions from '~/hooks/Input/useMentions';
-import { useLocalize, useCombobox } from '~/hooks';
-import { cn, removeCharIfLast } from '~/utils';
+import { removeCharIfLast } from '~/utils';
 import MentionItem from './MentionItem';
-import store from '~/store';
+
+const ROW_HEIGHT = 44;
 
 export default function Mention({
   setShowMentionPopover,
@@ -22,18 +25,27 @@ export default function Mention({
   newConversation: ConvoGenerator;
   textAreaRef: React.MutableRefObject<HTMLTextAreaElement | null>;
   commandChar?: string;
-  placeholder?: string;
+  placeholder?: TranslationKeys;
   includeAssistants?: boolean;
 }) {
   const localize = useLocalize();
-  const assistantMap = useAssistantsMapContext();
-  const { options, presets, modelSpecs, modelsConfig, endpointsConfig, assistantListMap } =
-    useMentions({ assistantMap: assistantMap || {}, includeAssistants });
+  const getConversation = useGetConversation(0);
+  const assistantsMap = useAssistantsMapContext();
+  const {
+    options,
+    presets,
+    modelSpecs,
+    agentsList,
+    modelsConfig,
+    endpointsConfig,
+    assistantListMap,
+  } = useMentions({ assistantMap: assistantsMap || {}, includeAssistants });
   const { onSelectMention } = useSelectMention({
     presets,
     modelSpecs,
-    assistantMap,
+    assistantsMap,
     endpointsConfig,
+    getConversation,
     newConversation,
   });
 
@@ -56,25 +68,30 @@ export default function Mention({
       setSearchValue('');
       setOpen(false);
       setShowMentionPopover(false);
-      onSelectMention(mention);
+      onSelectMention?.(mention);
 
       if (textAreaRef.current) {
         removeCharIfLast(textAreaRef.current, commandChar);
       }
     };
 
-    if (mention.type === 'endpoint' && mention.value === EModelEndpoint.assistants) {
+    if (mention.type === 'endpoint' && mention.value === EModelEndpoint.agents) {
       setSearchValue('');
-      setInputOptions(assistantListMap[EModelEndpoint.assistants]);
+      setInputOptions(agentsList ?? []);
+      setActiveIndex(0);
+      inputRef.current?.focus();
+    } else if (mention.type === 'endpoint' && mention.value === EModelEndpoint.assistants) {
+      setSearchValue('');
+      setInputOptions(assistantListMap[EModelEndpoint.assistants] ?? []);
       setActiveIndex(0);
       inputRef.current?.focus();
     } else if (mention.type === 'endpoint' && mention.value === EModelEndpoint.azureAssistants) {
       setSearchValue('');
-      setInputOptions(assistantListMap[EModelEndpoint.azureAssistants]);
+      setInputOptions(assistantListMap[EModelEndpoint.azureAssistants] ?? []);
       setActiveIndex(0);
       inputRef.current?.focus();
     } else if (mention.type === 'endpoint') {
-      const models = (modelsConfig?.[mention.value ?? ''] ?? []).map((model) => ({
+      const models = (modelsConfig?.[mention.value || ''] ?? []).map((model) => ({
         value: mention.value,
         label: model,
         type: 'model',
@@ -110,17 +127,42 @@ export default function Mention({
     currentActiveItem?.scrollIntoView({ behavior: 'instant', block: 'nearest' });
   }, [type, activeIndex]);
 
-  const chatDirection = useRecoilValue(store.chatDirection).toLowerCase();
-  const isRTL = chatDirection === 'rtl';
+  const rowRenderer = ({
+    index,
+    key,
+    style,
+  }: {
+    index: number;
+    key: string;
+    style: React.CSSProperties;
+  }) => {
+    const mention = matches[index] as MentionOption;
+    return (
+      <MentionItem
+        type={type}
+        index={index}
+        key={key}
+        style={style}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (timeoutRef.current) {
+            clearTimeout(timeoutRef.current);
+          }
+          timeoutRef.current = null;
+          handleSelect(mention);
+        }}
+        name={mention.label ?? ''}
+        icon={mention.icon}
+        description={mention.description}
+        isActive={index === activeIndex}
+      />
+    );
+  };
 
   return (
-    <div className="absolute bottom-16 z-10 w-full space-y-2">
-      <div
-        className={cn(
-          'popover border-token-border-light rounded-2xl border bg-white p-2 shadow-lg dark:bg-gray-700',
-          isRTL ? 'rtl' : '',
-        )}
-      >
+    <div className="absolute bottom-28 z-10 w-full space-y-2">
+      <div className="popover border-token-border-light rounded-2xl border bg-white p-2 shadow-lg dark:bg-gray-700">
         <input
           // The user expects focus to transition to the input field when the popover is opened
           // eslint-disable-next-line jsx-a11y/no-autofocus
@@ -164,27 +206,20 @@ export default function Mention({
           }}
         />
         {open && (
-          <div className="max-h-40 overflow-y-auto">
-            {(matches as MentionOption[]).map((mention, index) => (
-              <MentionItem
-                type={type}
-                index={index}
-                key={`${mention.value}-${index}`}
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  if (timeoutRef.current) {
-                    clearTimeout(timeoutRef.current);
-                  }
-                  timeoutRef.current = null;
-                  handleSelect(mention);
-                }}
-                name={mention.label ?? ''}
-                icon={mention.icon}
-                description={mention.description}
-                isActive={index === activeIndex}
-              />
-            ))}
+          <div className="max-h-40">
+            <AutoSizer disableHeight>
+              {({ width }) => (
+                <List
+                  width={width}
+                  overscanRowCount={5}
+                  rowHeight={ROW_HEIGHT}
+                  rowCount={matches.length}
+                  rowRenderer={rowRenderer}
+                  scrollToIndex={activeIndex}
+                  height={Math.min(matches.length * ROW_HEIGHT, 160)}
+                />
+              )}
+            </AutoSizer>
           </div>
         )}
       </div>

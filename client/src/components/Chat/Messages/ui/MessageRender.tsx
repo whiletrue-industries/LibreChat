@@ -1,128 +1,162 @@
+import React, { useCallback, useMemo, memo } from 'react';
+import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
-import { useCallback, useMemo, memo } from 'react';
 import type { TMessage } from 'librechat-data-provider';
-import type { TMessageProps } from '~/common';
+import type { TMessageProps, TMessageIcon } from '~/common';
+import { cn, getHeaderPrefixForScreenReader, getMessageAriaLabel } from '~/utils';
 import MessageContent from '~/components/Chat/Messages/Content/MessageContent';
+import { useLocalize, useMessageActions, useContentMetadata } from '~/hooks';
 import PlaceholderRow from '~/components/Chat/Messages/ui/PlaceholderRow';
 import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
-import Icon from '~/components/Chat/Messages/MessageIcon';
-import { Plugin } from '~/components/Messages/Content';
+import MessageIcon from '~/components/Chat/Messages/MessageIcon';
 import SubRow from '~/components/Chat/Messages/SubRow';
-import { useMessageActions } from '~/hooks';
-import { cn, logger } from '~/utils';
+import { fontSizeAtom } from '~/store/fontSize';
+import { MessageContext } from '~/Providers';
 import store from '~/store';
 
 type MessageRenderProps = {
   message?: TMessage;
-  isCard?: boolean;
-  isMultiMessage?: boolean;
-  isSubmittingFamily?: boolean;
+  isSubmitting?: boolean;
 } & Pick<
   TMessageProps,
   'currentEditId' | 'setCurrentEditId' | 'siblingIdx' | 'setSiblingIdx' | 'siblingCount'
 >;
 
-const MessageRender = memo(
-  ({
-    isCard,
-    siblingIdx,
-    siblingCount,
+const MessageRender = memo(function MessageRender({
+  message: msg,
+  siblingIdx,
+  siblingCount,
+  setSiblingIdx,
+  currentEditId,
+  setCurrentEditId,
+  isSubmitting = false,
+}: MessageRenderProps) {
+  const localize = useLocalize();
+  const {
+    ask,
+    edit,
+    index,
+    agent,
+    assistant,
+    enterEdit,
+    conversation,
+    messageLabel,
+    handleFeedback,
+    handleContinue,
+    latestMessageId,
+    copyToClipboard,
+    regenerateMessage,
+    latestMessageDepth,
+  } = useMessageActions({
     message: msg,
-    setSiblingIdx,
     currentEditId,
-    isMultiMessage,
     setCurrentEditId,
-    isSubmittingFamily,
-  }: MessageRenderProps) => {
-    const {
-      ask,
-      edit,
-      index,
-      assistant,
-      enterEdit,
-      conversation,
+  });
+  const fontSize = useAtomValue(fontSizeAtom);
+  const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
+
+  const handleRegenerateMessage = useCallback(() => regenerateMessage(), [regenerateMessage]);
+  const hasNoChildren = !(msg?.children?.length ?? 0);
+  const isLast = useMemo(
+    () => hasNoChildren && (msg?.depth === latestMessageDepth || msg?.depth === -1),
+    [hasNoChildren, msg?.depth, latestMessageDepth],
+  );
+  const isLatestMessage = msg?.messageId === latestMessageId;
+  /** Only pass isSubmitting to the latest message to prevent unnecessary re-renders */
+  const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
+
+  const iconData: TMessageIcon = useMemo(
+    () => ({
+      endpoint: msg?.endpoint ?? conversation?.endpoint,
+      model: msg?.model ?? conversation?.model,
+      iconURL: msg?.iconURL,
+      modelLabel: messageLabel,
+      isCreatedByUser: msg?.isCreatedByUser,
+    }),
+    [
       messageLabel,
-      isSubmitting,
-      latestMessage,
-      handleContinue,
-      copyToClipboard,
-      setLatestMessage,
-      regenerateMessage,
-    } = useMessageActions({
-      message: msg,
-      currentEditId,
-      isMultiMessage,
-      setCurrentEditId,
-    });
+      conversation?.endpoint,
+      conversation?.model,
+      msg?.model,
+      msg?.iconURL,
+      msg?.endpoint,
+      msg?.isCreatedByUser,
+    ],
+  );
 
-    const fontSize = useRecoilValue(store.fontSize);
-    const handleRegenerateMessage = useCallback(() => regenerateMessage(), [regenerateMessage]);
-    const { isCreatedByUser, error, unfinished } = msg ?? {};
-    const isLast = useMemo(
-      () => !msg?.children?.length && (msg?.depth === latestMessage?.depth || msg?.depth === -1),
-      [msg?.children, msg?.depth, latestMessage?.depth],
-    );
+  const { hasParallelContent } = useContentMetadata(msg);
+  const messageId = msg?.messageId ?? '';
+  const messageContextValue = useMemo(
+    () => ({
+      messageId,
+      isLatestMessage,
+      isExpanded: false as const,
+      isSubmitting: effectiveIsSubmitting,
+      conversationId: conversation?.conversationId,
+    }),
+    [messageId, conversation?.conversationId, effectiveIsSubmitting, isLatestMessage],
+  );
 
-    if (!msg) {
-      return null;
+  if (!msg) {
+    return null;
+  }
+
+  const getChatWidthClass = () => {
+    if (maximizeChatSpace) {
+      return 'w-full max-w-full md:px-5 lg:px-1 xl:px-5';
     }
+    if (hasParallelContent) {
+      return 'md:max-w-[58rem] xl:max-w-[70rem]';
+    }
+    return 'md:max-w-[47rem] xl:max-w-[55rem]';
+  };
 
-    const isLatestMessage = msg.messageId === latestMessage?.messageId;
-    const showCardRender = isLast && !(isSubmittingFamily === true) && isCard === true;
-    const isLatestCard = isCard === true && !(isSubmittingFamily === true) && isLatestMessage;
-    const clickHandler =
-      showCardRender && !isLatestMessage
-        ? () => {
-          logger.log(`Message Card click: Setting ${msg.messageId} as latest message`);
-          logger.dir(msg);
-          setLatestMessage(msg);
-        }
-        : undefined;
+  const baseClasses = {
+    common: 'group mx-auto flex flex-1 gap-3 transition-all duration-300 transform-gpu ',
+    chat: getChatWidthClass(),
+  };
 
-    return (
-      <div
-        aria-label={`message-${msg.depth}-${msg.messageId}`}
-        className={cn(
-          'final-completion group mx-auto flex flex-1 gap-3',
-          isCard === true
-            ? 'relative w-full gap-1 rounded-lg border border-border-medium bg-surface-primary-alt p-2 md:w-1/2 md:gap-3 md:p-4'
-            : 'md:max-w-3xl md:px-5 lg:max-w-[40rem] lg:px-1 xl:max-w-[48rem] xl:px-5',
-          isLatestCard === true ? 'bg-surface-secondary' : '',
-          showCardRender ? 'cursor-pointer transition-colors duration-300' : '',
-          'focus:outline-none focus:ring-2 focus:ring-border-xheavy',
-        )}
-        onClick={clickHandler}
-        onKeyDown={(e) => {
-          if ((e.key === 'Enter' || e.key === ' ') && clickHandler) {
-            clickHandler();
-          }
-        }}
-        role={showCardRender ? 'button' : undefined}
-        tabIndex={showCardRender ? 0 : undefined}
-      >
-        {isLatestCard === true && (
-          <div className="absolute right-0 top-0 m-2 h-3 w-3 rounded-full bg-text-primary"></div>
-        )}
-        <div className="relative flex flex-shrink-0 flex-col items-end">
-          <div>
-            <div className="pt-0.5">
-              <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
-                <Icon message={msg} conversation={conversation} assistant={assistant} />
-              </div>
-            </div>
+  const conditionalClasses = {
+    focus: 'focus:outline-none focus:ring-2 focus:ring-border-xheavy',
+  };
+
+  return (
+    <div
+      id={msg.messageId}
+      aria-label={getMessageAriaLabel(msg, localize)}
+      className={cn(
+        baseClasses.common,
+        baseClasses.chat,
+        conditionalClasses.focus,
+        'message-render',
+      )}
+    >
+      {!hasParallelContent && (
+        <div className="relative flex flex-shrink-0 flex-col items-center">
+          <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
+            <MessageIcon iconData={iconData} assistant={assistant} agent={agent} />
           </div>
         </div>
-        <div
-          className={cn(
-            'relative flex w-11/12 flex-col',
-            msg.isCreatedByUser === true ? '' : 'agent-turn',
-          )}
-        >
-          <h2 className={cn('select-none font-semibold', fontSize)}>{messageLabel}</h2>
-          <div className="flex-col gap-1 md:gap-3">
-            <div className="flex max-w-full flex-grow flex-col gap-0">
-              {msg.plugin && <Plugin plugin={msg.plugin} />}
+      )}
+
+      <div
+        className={cn(
+          'relative flex flex-col',
+          hasParallelContent ? 'w-full' : 'w-11/12',
+          msg.isCreatedByUser ? 'user-turn' : 'agent-turn',
+        )}
+      >
+        {!hasParallelContent && (
+          <h2 className={cn('select-none font-semibold', fontSize)}>
+            <span className="sr-only">{getHeaderPrefixForScreenReader(msg, localize)}</span>
+            {messageLabel}
+          </h2>
+        )}
+
+        <div className="flex flex-col gap-1">
+          <div className="flex min-h-[20px] max-w-full flex-grow flex-col gap-0">
+            <MessageContext.Provider value={messageContextValue}>
               <MessageContent
                 ask={ask}
                 edit={edit}
@@ -130,17 +164,17 @@ const MessageRender = memo(
                 text={msg.text || ''}
                 message={msg}
                 enterEdit={enterEdit}
-                error={!!(error ?? false)}
-                isSubmitting={isSubmitting}
-                unfinished={unfinished ?? false}
-                isCreatedByUser={isCreatedByUser ?? true}
+                error={!!(msg.error ?? false)}
+                isSubmitting={effectiveIsSubmitting}
+                unfinished={msg.unfinished ?? false}
+                isCreatedByUser={msg.isCreatedByUser ?? true}
                 siblingIdx={siblingIdx ?? 0}
                 setSiblingIdx={setSiblingIdx ?? (() => ({}))}
               />
-            </div>
+            </MessageContext.Provider>
           </div>
-          {!msg.children?.length && (isSubmittingFamily === true || isSubmitting) ? (
-            <PlaceholderRow isCard={isCard} />
+          {hasNoChildren && effectiveIsSubmitting ? (
+            <PlaceholderRow />
           ) : (
             <SubRow classes="text-xs">
               <SiblingSwitch
@@ -158,15 +192,17 @@ const MessageRender = memo(
                 regenerate={handleRegenerateMessage}
                 copyToClipboard={copyToClipboard}
                 handleContinue={handleContinue}
-                latestMessage={latestMessage}
+                latestMessageId={latestMessageId}
+                handleFeedback={handleFeedback}
                 isLast={isLast}
               />
             </SubRow>
           )}
         </div>
       </div>
-    );
-  },
-);
+    </div>
+  );
+});
+MessageRender.displayName = 'MessageRender';
 
 export default MessageRender;

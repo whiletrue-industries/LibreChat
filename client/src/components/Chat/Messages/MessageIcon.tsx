@@ -1,39 +1,44 @@
 import React, { useMemo, memo } from 'react';
-import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
-import type { TMessage, TPreset, Assistant } from 'librechat-data-provider';
-import type { TMessageProps } from '~/common';
+import { getEndpointField } from 'librechat-data-provider';
+import type { Assistant, Agent } from 'librechat-data-provider';
+import type { TMessageIcon } from '~/common';
 import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
-import { getEndpointField, getIconEndpoint } from '~/utils';
+import { useGetEndpointsQuery } from '~/data-provider';
+import { getIconEndpoint, logger } from '~/utils';
 import Icon from '~/components/Endpoints/Icon';
 
 const MessageIcon = memo(
-  (
-    props: Pick<TMessageProps, 'message' | 'conversation'> & {
-      assistant?: Assistant;
-    },
-  ) => {
+  ({
+    iconData,
+    assistant,
+    agent,
+  }: {
+    iconData?: TMessageIcon;
+    assistant?: Assistant;
+    agent?: Agent;
+  }) => {
+    logger.log('icon_data', iconData, assistant, agent);
     const { data: endpointsConfig } = useGetEndpointsQuery();
-    const { message, conversation, assistant } = props;
 
+    const agentName = useMemo(() => agent?.name ?? '', [agent]);
+    const agentAvatar = useMemo(() => agent?.avatar?.filepath ?? '', [agent]);
     const assistantName = useMemo(() => assistant?.name ?? '', [assistant]);
     const assistantAvatar = useMemo(() => assistant?.metadata?.avatar ?? '', [assistant]);
-    const isCreatedByUser = useMemo(() => message?.isCreatedByUser ?? false, [message]);
 
-    const messageSettings = useMemo(
-      () => ({
-        ...(conversation ?? {}),
-        ...({
-          ...(message ?? {}),
-          iconURL: message?.iconURL ?? '',
-        } as TMessage),
-      }),
-      [conversation, message],
-    );
+    const avatarURL = useMemo(() => {
+      let result = '';
+      if (assistant) {
+        result = assistantAvatar;
+      } else if (agent) {
+        result = agentAvatar;
+      }
+      return result;
+    }, [assistant, agent, assistantAvatar, agentAvatar]);
 
-    const iconURL = messageSettings.iconURL;
+    const iconURL = iconData?.iconURL;
     const endpoint = useMemo(
-      () => getIconEndpoint({ endpointsConfig, iconURL, endpoint: messageSettings.endpoint }),
-      [endpointsConfig, iconURL, messageSettings.endpoint],
+      () => getIconEndpoint({ endpointsConfig, iconURL, endpoint: iconData?.endpoint }),
+      [endpointsConfig, iconURL, iconData?.endpoint],
     );
 
     const endpointIconURL = useMemo(
@@ -41,25 +46,29 @@ const MessageIcon = memo(
       [endpointsConfig, endpoint],
     );
 
-    if (isCreatedByUser !== true && iconURL != null && iconURL.includes('http')) {
+    if (iconData?.isCreatedByUser !== true && iconURL != null && iconURL.includes('http')) {
       return (
         <ConvoIconURL
-          preset={messageSettings as typeof messageSettings & TPreset}
+          iconURL={iconURL}
+          modelLabel={iconData?.modelLabel}
           context="message"
           assistantAvatar={assistantAvatar}
+          agentAvatar={agentAvatar}
           endpointIconURL={endpointIconURL}
           assistantName={assistantName}
+          agentName={agentName}
         />
       );
     }
 
     return (
       <Icon
-        isCreatedByUser={isCreatedByUser}
+        isCreatedByUser={iconData?.isCreatedByUser ?? false}
         endpoint={endpoint}
-        iconURL={!assistant ? endpointIconURL : assistantAvatar}
-        model={message?.model ?? conversation?.model}
+        iconURL={avatarURL || endpointIconURL}
+        model={iconData?.model}
         assistantName={assistantName}
+        agentName={agentName}
         size={28.8}
       />
     );

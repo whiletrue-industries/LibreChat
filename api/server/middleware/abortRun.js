@@ -1,27 +1,22 @@
-const { CacheKeys, isUUID } = require('librechat-data-provider');
+const { sendEvent } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
+const { CacheKeys, RunStatus, isUUID } = require('librechat-data-provider');
+const { initializeClient } = require('~/server/services/Endpoints/assistants');
+const { checkMessageGaps, recordUsage } = require('~/server/services/Threads');
 const { deleteMessages } = require('~/models/Message');
 const { getConvo } = require('~/models/Conversation');
 const getLogStores = require('~/cache/getLogStores');
-const { sendMessage } = require('~/server/utils');
-const { logger } = require('~/config');
 
 const three_minutes = 1000 * 60 * 3;
 
-/**
- * Abort an in-flight chat request.
- *
- * Under the Responses API there is no server-side run to cancel — the HTTP
- * stream is already closing (the frontend aborted its fetch). We mark the
- * cache, clean up any unfinished placeholder messages in MongoDB, and send
- * a `final` event back to the client so the UI can stop listening.
- */
 async function abortRun(req, res) {
   res.setHeader('Content-Type', 'application/json');
-  const { abortKey } = req.body;
-  const [conversationId] = abortKey.split(':');
+  const { abortKey, endpoint } = req.body;
+  const [conversationId, latestMessageId] = abortKey.split(':');
   const conversation = await getConvo(req.user.id, conversationId);
 
   if (conversation?.model) {
+    req.body = req.body || {}; // Express 5: ensure req.body exists
     req.body.model = conversation.model;
   }
 
@@ -32,27 +27,77 @@ async function abortRun(req, res) {
 
   const cacheKey = `${req.user.id}:${conversationId}`;
   const cache = getLogStores(CacheKeys.ABORT_KEYS);
+  const runValues = await cache.get(cacheKey);
+  if (!runValues) {
+    logger.warn('[abortRun] Run not found in cache', { cacheKey });
+    return res.status(204).send({ message: 'Run not found' });
+  }
+  const [thread_id, run_id] = runValues.split(':');
+
+  if (!run_id) {
+    logger.warn("[abortRun] Couldn't find run for cancel request", { thread_id });
+    return res.status(204).send({ message: 'Run not found' });
+  } else if (run_id === 'cancelled') {
+    logger.warn('[abortRun] Run already cancelled', { thread_id });
+    return res.status(204).send({ message: 'Run already cancelled' });
+  }
+
+  let runMessages = [];
+  /** @type {{ openai: OpenAI }} */
+  const { openai } = await initializeClient({ req, res });
 
   try {
     await cache.set(cacheKey, 'cancelled', three_minutes);
+    const cancelledRun = await openai.beta.threads.runs.cancel(run_id, { thread_id });
+    logger.debug('[abortRun] Cancelled run:', cancelledRun);
   } catch (error) {
-    logger.error('[abortRun] Error marking cache cancelled', error);
+    logger.error('[abortRun] Error cancelling run', error);
+    if (
+      error?.message?.includes(RunStatus.CANCELLED) ||
+      error?.message?.includes(RunStatus.CANCELLING)
+    ) {
+      return res.end();
+    }
   }
+
   try {
-    await deleteMessages({
+    const run = await openai.beta.threads.runs.retrieve(run_id, { thread_id });
+    await recordUsage({
+      ...run.usage,
+      model: run.model,
       user: req.user.id,
-      unfinished: true,
       conversationId,
     });
   } catch (error) {
-    logger.error('[abortRun] Error deleting unfinished messages', error);
+    logger.error('[abortRun] Error fetching or processing run', error);
   }
 
-  const finalEvent = { final: true, conversation, runMessages: [] };
-  if (res.headersSent) {
-    return sendMessage(res, finalEvent);
+  /* TODO: a reconciling strategy between the existing intermediate message would be more optimal than deleting it */
+  await deleteMessages({
+    user: req.user.id,
+    unfinished: true,
+    conversationId,
+  });
+  runMessages = await checkMessageGaps({
+    openai,
+    run_id,
+    endpoint,
+    thread_id,
+    conversationId,
+    latestMessageId,
+  });
+
+  const finalEvent = {
+    final: true,
+    conversation,
+    runMessages,
+  };
+
+  if (res.headersSent && finalEvent) {
+    return sendEvent(res, finalEvent);
   }
-  return res.json(finalEvent);
+
+  res.json(finalEvent);
 }
 
 module.exports = {

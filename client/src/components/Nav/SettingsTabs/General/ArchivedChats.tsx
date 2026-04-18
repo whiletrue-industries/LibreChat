@@ -1,26 +1,26 @@
-import { useLocalize } from '~/hooks';
-import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
-import { OGDialog, OGDialogTrigger } from '~/components/ui';
-
+import { useState } from 'react';
+import { OGDialogTemplate, OGDialog, OGDialogTrigger, Button } from '@librechat/client';
 import ArchivedChatsTable from './ArchivedChatsTable';
+import { useLocalize } from '~/hooks';
 
 export default function ArchivedChats() {
   const localize = useLocalize();
+  const [isOpen, setIsOpen] = useState(false);
 
   return (
     <div className="flex items-center justify-between">
       <div>{localize('com_nav_archived_chats')}</div>
-      <OGDialog>
+      <OGDialog open={isOpen} onOpenChange={setIsOpen}>
         <OGDialogTrigger asChild>
-          <button className="btn btn-neutral relative ">
-            {localize('com_nav_archived_chats_manage')}
-          </button>
+          <Button variant="outline" aria-label="Archived chats">
+            {localize('com_ui_manage')}
+          </Button>
         </OGDialogTrigger>
         <OGDialogTemplate
           title={localize('com_nav_archived_chats')}
           className="max-w-[1000px]"
           showCancelButton={false}
-          main={<ArchivedChatsTable />}
+          main={<ArchivedChatsTable isOpen={isOpen} onOpenChange={setIsOpen} />}
         />
       </OGDialog>
     </div>

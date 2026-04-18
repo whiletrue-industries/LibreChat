@@ -1,47 +1,53 @@
+import { useCallback } from 'react';
+import { useSetRecoilState, useRecoilValue } from 'recoil';
 import { PlusCircle } from 'lucide-react';
+import { TooltipAnchor } from '@librechat/client';
 import { isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TConversation } from 'librechat-data-provider';
-import { useChatContext, useAddedChatContext } from '~/Providers';
+import { useGetConversation, useLocalize } from '~/hooks';
 import { mainTextareaId } from '~/common';
-import { Button } from '~/components/ui';
-import { cn } from '~/utils';
+import store from '~/store';
 
-function AddMultiConvo({ className = '' }: { className?: string }) {
-  const { conversation } = useChatContext();
-  const { setConversation: setAddedConvo } = useAddedChatContext();
+function AddMultiConvo() {
+  const localize = useLocalize();
+  const getConversation = useGetConversation(0);
+  const endpoint = useRecoilValue(store.conversationEndpointByIndex(0));
+  const setAddedConvo = useSetRecoilState(store.conversationByIndex(1));
 
-  const clickHandler = () => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const clickHandler = useCallback(() => {
+    const conversation = getConversation();
     const { title: _t, ...convo } = conversation ?? ({} as TConversation);
     setAddedConvo({
       ...convo,
       title: '',
-    });
+    } as TConversation);
 
     const textarea = document.getElementById(mainTextareaId);
     if (textarea) {
       textarea.focus();
     }
-  };
+  }, [getConversation, setAddedConvo]);
 
-  if (!conversation) {
+  if (!endpoint) {
     return null;
   }
 
-  if (isAssistantsEndpoint(conversation.endpoint)) {
+  if (isAssistantsEndpoint(endpoint)) {
     return null;
   }
 
   return (
-    <Button
-      id="add-multi-conversation-button"
-      aria-label="Add multi-conversation"
+    <TooltipAnchor
+      description={localize('com_ui_add_multi_conversation')}
+      role="button"
+      tabIndex={0}
+      aria-label={localize('com_ui_add_multi_conversation')}
       onClick={clickHandler}
-      variant="outline"
-      className={cn('h-10 w-10 p-0 transition-all duration-300 ease-in-out', className)}
+      data-testid="add-multi-convo-button"
+      className="inline-flex size-10 flex-shrink-0 items-center justify-center rounded-xl border border-border-light bg-presentation text-text-primary transition-all ease-in-out hover:bg-surface-tertiary disabled:pointer-events-none disabled:opacity-50 radix-state-open:bg-surface-tertiary"
     >
-      <PlusCircle size={16} />
-    </Button>
+      <PlusCircle className="icon-lg" aria-hidden="true" />
+    </TooltipAnchor>
   );
 }
 

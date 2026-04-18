@@ -1,76 +1,90 @@
 import React, { useState, useCallback } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, Input } from '~/components/ui';
-import { cn, defaultTextProps, removeFocusOutlines } from '~/utils';
+import { LockIcon, Trash } from 'lucide-react';
+import { REGEXP_ONLY_DIGITS, REGEXP_ONLY_DIGITS_AND_CHARS } from 'input-otp';
+import {
+  InputOTPSeparator,
+  OGDialogContent,
+  OGDialogTrigger,
+  OGDialogHeader,
+  InputOTPGroup,
+  OGDialogTitle,
+  InputOTPSlot,
+  OGDialog,
+  InputOTP,
+  Spinner,
+  Button,
+  Label,
+  Input,
+} from '@librechat/client';
+import type { TDeleteUserRequest } from 'librechat-data-provider';
 import { useDeleteUserMutation } from '~/data-provider';
-import { Spinner, LockIcon } from '~/components/svg';
 import { useAuthContext } from '~/hooks/AuthContext';
+import { LocalizeFunction } from '~/common';
 import { useLocalize } from '~/hooks';
-import DangerButton from '../DangerButton';
+import { cn } from '~/utils';
 
 const DeleteAccount = ({ disabled = false }: { title?: string; disabled?: boolean }) => {
   const localize = useLocalize();
   const { user, logout } = useAuthContext();
   const { mutate: deleteUser, isLoading: isDeleting } = useDeleteUserMutation({
-    onMutate: () => logout(),
+    onSuccess: () => logout(),
   });
 
   const [isDialogOpen, setDialogOpen] = useState<boolean>(false);
-  const [deleteInput, setDeleteInput] = useState('');
-  const [emailInput, setEmailInput] = useState('');
   const [isLocked, setIsLocked] = useState(true);
+  const [otpToken, setOtpToken] = useState('');
+  const [useBackup, setUseBackup] = useState(false);
 
-  const onClick = useCallback(() => {
-    setDialogOpen(true);
-  }, []);
+  const needs2FA = !!user?.twoFactorEnabled;
 
   const handleDeleteUser = () => {
-    if (!isLocked) {
-      deleteUser(undefined);
+    if (isLocked) {
+      return;
     }
+
+    let payload: TDeleteUserRequest | undefined;
+    if (needs2FA && otpToken.trim()) {
+      payload = useBackup ? { backupCode: otpToken.trim() } : { token: otpToken.trim() };
+    }
+
+    deleteUser(payload);
   };
 
   const handleInputChange = useCallback(
-    (newEmailInput: string, newDeleteInput: string) => {
+    (newEmailInput: string) => {
       const isEmailCorrect =
-        newEmailInput.trim().toLowerCase() === user?.email?.trim().toLowerCase();
-      const isDeleteInputCorrect = newDeleteInput === 'DELETE';
-      setIsLocked(!(isEmailCorrect && isDeleteInputCorrect));
+        newEmailInput.trim().toLowerCase() === user?.email.trim().toLowerCase();
+      setIsLocked(!isEmailCorrect);
     },
     [user?.email],
   );
 
+  const otpReady = !needs2FA || otpToken.length === (useBackup ? 8 : 6);
+
   return (
     <>
-      <div className="flex items-center justify-between">
-        <span>{localize('com_nav_delete_account')}</span>
-        <label>
-          <DangerButton
-            id={'delete-user-account'}
-            disabled={disabled}
-            onClick={onClick}
-            actionTextCode="com_ui_delete"
-            className={cn(
-              'btn relative border-none bg-red-500 text-white hover:bg-red-700 dark:hover:bg-red-700',
-            )}
-            confirmClear={false}
-            infoTextCode={''}
-            dataTestIdInitial={''}
-            dataTestIdConfirm={''}
-          />
-        </label>
-      </div>
-      <Dialog open={isDialogOpen} onOpenChange={() => setDialogOpen(false)}>
-        <DialogContent
-          className={cn('shadow-2xl md:h-[500px] md:w-[450px]')}
-          style={{ borderRadius: '12px', padding: '20px' }}
-        >
-          <DialogHeader>
-            <DialogTitle className="text-lg font-medium leading-6">
+      <OGDialog open={isDialogOpen} onOpenChange={setDialogOpen}>
+        <div className="flex items-center justify-between">
+          <Label id="delete-account-label">{localize('com_nav_delete_account')}</Label>
+          <OGDialogTrigger asChild>
+            <Button
+              aria-labelledby="delete-account-label"
+              variant="destructive"
+              onClick={() => setDialogOpen(true)}
+              disabled={disabled}
+            >
+              {localize('com_ui_delete')}
+            </Button>
+          </OGDialogTrigger>
+        </div>
+        <OGDialogContent className="w-11/12 max-w-md">
+          <OGDialogHeader>
+            <OGDialogTitle className="text-lg font-medium leading-6">
               {localize('com_nav_delete_account_confirm')}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="mb-20 text-sm text-black dark:text-white">
-            <ul>
+            </OGDialogTitle>
+          </OGDialogHeader>
+          <div className="mb-8 text-sm text-black dark:text-white">
+            <ul className="font-semibold text-amber-600">
               <li>{localize('com_nav_delete_warning')}</li>
               <li>{localize('com_nav_delete_data_info')}</li>
             </ul>
@@ -80,28 +94,67 @@ const DeleteAccount = ({ disabled = false }: { title?: string; disabled?: boolea
               {renderInput(
                 localize('com_nav_delete_account_email_placeholder'),
                 'email-confirm-input',
-                user?.email || '',
-                (e) => {
-                  setEmailInput(e.target.value);
-                  handleInputChange(e.target.value, deleteInput);
-                },
+                user?.email ?? '',
+                (e) => handleInputChange(e.target.value),
               )}
             </div>
-            <div className="mb-4">
-              {renderInput(
-                localize('com_nav_delete_account_confirm_placeholder'),
-                'delete-confirm-input',
-                '',
-                (e) => {
-                  setDeleteInput(e.target.value);
-                  handleInputChange(emailInput, e.target.value);
-                },
-              )}
-            </div>
-            {renderDeleteButton(handleDeleteUser, isDeleting, isLocked, localize)}
+            {needs2FA && (
+              <div className="mb-4 space-y-3">
+                <Label className="text-sm font-medium">
+                  {localize('com_ui_2fa_verification_required')}
+                </Label>
+                <div className="flex justify-center">
+                  <InputOTP
+                    value={otpToken}
+                    onChange={setOtpToken}
+                    maxLength={useBackup ? 8 : 6}
+                    pattern={useBackup ? REGEXP_ONLY_DIGITS_AND_CHARS : REGEXP_ONLY_DIGITS}
+                    className="gap-2"
+                  >
+                    {useBackup ? (
+                      <InputOTPGroup>
+                        <InputOTPSlot index={0} />
+                        <InputOTPSlot index={1} />
+                        <InputOTPSlot index={2} />
+                        <InputOTPSlot index={3} />
+                        <InputOTPSlot index={4} />
+                        <InputOTPSlot index={5} />
+                        <InputOTPSlot index={6} />
+                        <InputOTPSlot index={7} />
+                      </InputOTPGroup>
+                    ) : (
+                      <>
+                        <InputOTPGroup>
+                          <InputOTPSlot index={0} />
+                          <InputOTPSlot index={1} />
+                          <InputOTPSlot index={2} />
+                        </InputOTPGroup>
+                        <InputOTPSeparator />
+                        <InputOTPGroup>
+                          <InputOTPSlot index={3} />
+                          <InputOTPSlot index={4} />
+                          <InputOTPSlot index={5} />
+                        </InputOTPGroup>
+                      </>
+                    )}
+                  </InputOTP>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUseBackup(!useBackup);
+                    setOtpToken('');
+                  }}
+                  className="text-sm text-primary hover:underline"
+                >
+                  {useBackup ? localize('com_ui_use_2fa_code') : localize('com_ui_use_backup_code')}
+                </button>
+              </div>
+            )}
+            {renderDeleteButton(handleDeleteUser, isDeleting, isLocked || !otpReady, localize)}
           </div>
-        </DialogContent>
-      </Dialog>
+        </OGDialogContent>
+      </OGDialog>
     </>
   );
 };
@@ -113,17 +166,10 @@ const renderInput = (
   onChange: (e: React.ChangeEvent<HTMLInputElement>) => void,
 ) => (
   <div className="mb-4">
-    <label className="mb-1 block text-sm font-medium text-black dark:text-white">{label}</label>
-    <Input
-      id={id}
-      onChange={onChange}
-      placeholder={value}
-      className={cn(
-        defaultTextProps,
-        'h-10 max-h-10 w-full max-w-full rounded-md bg-white px-3 py-2',
-        removeFocusOutlines,
-      )}
-    />
+    <label className="mb-1 block text-sm font-medium text-black dark:text-white" htmlFor={id}>
+      {label}
+    </label>
+    <Input id={id} onChange={onChange} placeholder={value} />
   </div>
 );
 
@@ -131,16 +177,12 @@ const renderDeleteButton = (
   handleDeleteUser: () => void,
   isDeleting: boolean,
   isLocked: boolean,
-  localize: (key: string) => string,
+  localize: LocalizeFunction,
 ) => (
   <button
     className={cn(
-      'mt-4 flex w-full items-center justify-center rounded-lg px-4 py-2 transition-colors duration-200',
-      isLocked
-        ? 'cursor-not-allowed bg-gray-200 text-gray-300 dark:bg-gray-500 dark:text-gray-600'
-        : isDeleting
-          ? 'cursor-not-allowed bg-gray-100 text-gray-700 dark:bg-gray-400 dark:text-gray-700'
-          : 'bg-red-700 text-white hover:bg-red-800 ',
+      'mt-4 flex w-full items-center justify-center rounded-lg bg-surface-tertiary px-4 py-2 transition-all duration-200',
+      isLocked ? 'cursor-not-allowed opacity-30' : 'bg-destructive text-destructive-foreground',
     )}
     onClick={handleDeleteUser}
     disabled={isDeleting || isLocked}
@@ -153,12 +195,12 @@ const renderDeleteButton = (
       <>
         {isLocked ? (
           <>
-            <LockIcon />
+            <LockIcon className="size-5" aria-hidden="true" />
             <span className="ml-2">{localize('com_ui_locked')}</span>
           </>
         ) : (
           <>
-            <LockIcon />
+            <Trash className="size-5" aria-hidden="true" />
             <span className="ml-2">{localize('com_nav_delete_account_button')}</span>
           </>
         )}

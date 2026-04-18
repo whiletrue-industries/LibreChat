@@ -1,12 +1,21 @@
-import { useCallback, useRef } from 'react';
-import {
-  useGetModelsQuery,
-  useGetStartupConfig,
-  useGetEndpointsQuery,
-} from 'librechat-data-provider/react-query';
-import { useNavigate } from 'react-router-dom';
-import { FileSources, LocalStorageKeys, isAssistantsEndpoint } from 'librechat-data-provider';
+import { useCallback } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import { useRecoilState, useRecoilValue, useSetRecoilState, useRecoilCallback } from 'recoil';
+import {
+  Constants,
+  FileSources,
+  Permissions,
+  EModelEndpoint,
+  isParamEndpoint,
+  PermissionTypes,
+  getEndpointField,
+  isAgentsEndpoint,
+  LocalStorageKeys,
+  isEphemeralAgentId,
+  isAssistantsEndpoint,
+  getDefaultParamsEndpoint,
+} from 'librechat-data-provider';
 import type {
   TPreset,
   TSubmission,
@@ -16,35 +25,46 @@ import type {
 } from 'librechat-data-provider';
 import type { AssistantListItem } from '~/common';
 import {
-  getEndpointField,
-  buildDefaultConvo,
-  getDefaultEndpoint,
-  getDefaultModelSpec,
-  getModelSpecIconURL,
   updateLastSelectedModel,
+  getLocalStorageItems,
+  getDefaultModelSpec,
+  getDefaultEndpoint,
+  getModelSpecPreset,
+  buildDefaultConvo,
+  logger,
 } from '~/utils';
+import { useDeleteFilesMutation, useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import useAssistantListMap from './Assistants/useAssistantListMap';
-import { useDeleteFilesMutation } from '~/data-provider';
+import { useResetChatBadges } from './useChatBadges';
+import { useApplyModelSpecEffects } from './Agents';
 import { usePauseGlobalAudio } from './Audio';
-import { mainTextareaId } from '~/common';
+import { useHasAccess } from '~/hooks';
 import store from '~/store';
 
 const useNewConvo = (index = 0) => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { data: startupConfig } = useGetStartupConfig();
+  const applyModelSpecEffects = useApplyModelSpecEffects();
   const clearAllConversations = store.useClearConvoState();
   const defaultPreset = useRecoilValue(store.defaultPreset);
-  const { setConversation } = store.useCreateConversationAtom(index);
+  const { setConversation } = store.useSetConversationAtom(index);
   const [files, setFiles] = useRecoilState(store.filesByIndex(index));
+  const saveBadgesState = useRecoilValue<boolean>(store.saveBadgesState);
   const clearAllLatestMessages = store.useClearLatestMessages(`useNewConvo ${index}`);
   const setSubmission = useSetRecoilState<TSubmission | null>(store.submissionByIndex(index));
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
 
+  const hasAgentAccess = useHasAccess({
+    permissionType: PermissionTypes.AGENTS,
+    permission: Permissions.USE,
+  });
+
   const modelsQuery = useGetModelsQuery();
-  const timeoutIdRef = useRef<NodeJS.Timeout>();
   const assistantsListMap = useAssistantListMap();
   const { pauseGlobalAudio } = usePauseGlobalAudio(index);
   const saveDrafts = useRecoilValue<boolean>(store.saveDrafts);
+  const resetBadges = useResetChatBadges();
 
   const { mutateAsync } = useDeleteFilesMutation({
     onSuccess: () => {
@@ -64,10 +84,12 @@ const useNewConvo = (index = 0) => {
         buildDefault?: boolean,
         keepLatestMessage?: boolean,
         keepAddedConvos?: boolean,
+        disableFocus?: boolean,
+        _disableParams?: boolean,
       ) => {
         const modelsConfig = modelsData ?? modelsQuery.data;
         const { endpoint = null } = conversation;
-        const buildDefaultConversation = endpoint === null || buildDefault;
+        const buildDefaultConversation = (endpoint === null || buildDefault) ?? false;
         const activePreset =
           // use default preset only when it's defined,
           // preset is not provided,
@@ -80,11 +102,52 @@ const useNewConvo = (index = 0) => {
             ? defaultPreset
             : preset;
 
+        const disableParams =
+          _disableParams ??
+          (activePreset?.presetId != null &&
+            activePreset.presetId &&
+            activePreset.presetId === defaultPreset?.presetId);
+
         if (buildDefaultConversation) {
-          const defaultEndpoint = getDefaultEndpoint({
+          let defaultEndpoint = getDefaultEndpoint({
             convoSetup: activePreset ?? conversation,
             endpointsConfig,
           });
+
+          // If the selected endpoint is agents but user doesn't have access, find an alternative
+          // Skip this check for existing agent conversations (they have agent_id set)
+          // Also check localStorage for new conversations restored after refresh
+          const { lastConversationSetup } = getLocalStorageItems();
+          const storedAgentId =
+            isAgentsEndpoint(lastConversationSetup?.endpoint) && lastConversationSetup?.agent_id;
+          const isExistingAgentConvo =
+            isAgentsEndpoint(defaultEndpoint) &&
+            ((conversation.agent_id && !isEphemeralAgentId(conversation.agent_id)) ||
+              (storedAgentId && !isEphemeralAgentId(storedAgentId)));
+          if (
+            defaultEndpoint &&
+            isAgentsEndpoint(defaultEndpoint) &&
+            !hasAgentAccess &&
+            !isExistingAgentConvo
+          ) {
+            defaultEndpoint = Object.keys(endpointsConfig ?? {}).find(
+              (ep) => !isAgentsEndpoint(ep as EModelEndpoint) && endpointsConfig?.[ep],
+            ) as EModelEndpoint | undefined;
+          }
+
+          if (!defaultEndpoint) {
+            // Find first available endpoint that's not agents (if no access) or any endpoint
+            defaultEndpoint = Object.keys(endpointsConfig ?? {}).find((ep) => {
+              if (
+                isAgentsEndpoint(ep as EModelEndpoint) &&
+                !hasAgentAccess &&
+                !isExistingAgentConvo
+              ) {
+                return false;
+              }
+              return !!endpointsConfig?.[ep];
+            }) as EModelEndpoint;
+          }
 
           const endpointType = getEndpointField(endpointsConfig, defaultEndpoint, 'type');
           if (!conversation.endpointType && endpointType) {
@@ -95,15 +158,16 @@ const useNewConvo = (index = 0) => {
 
           const isAssistantEndpoint = isAssistantsEndpoint(defaultEndpoint);
           const assistants: AssistantListItem[] = assistantsListMap[defaultEndpoint] ?? [];
+          const currentAssistantId = conversation.assistant_id ?? '';
+          const currentAssistant = assistantsListMap[defaultEndpoint]?.[currentAssistantId] as
+            | AssistantListItem
+            | undefined;
 
-          if (
-            conversation.assistant_id &&
-            !assistantsListMap[defaultEndpoint]?.[conversation.assistant_id]
-          ) {
+          if (currentAssistantId && !currentAssistant) {
             conversation.assistant_id = undefined;
           }
 
-          if (!conversation.assistant_id && isAssistantEndpoint) {
+          if (!currentAssistantId && isAssistantEndpoint) {
             conversation.assistant_id =
               localStorage.getItem(
                 `${LocalStorageKeys.ASST_ID_PREFIX}${index}${defaultEndpoint}`,
@@ -111,11 +175,11 @@ const useNewConvo = (index = 0) => {
           }
 
           if (
-            conversation.assistant_id &&
+            currentAssistantId &&
             isAssistantEndpoint &&
-            conversation.conversationId === 'new'
+            conversation.conversationId === Constants.NEW_CONVO
           ) {
-            const assistant = assistants.find((asst) => asst.id === conversation.assistant_id);
+            const assistant = assistants.find((asst) => asst.id === currentAssistantId);
             conversation.model = assistant?.model;
             updateLastSelectedModel({
               endpoint: defaultEndpoint,
@@ -123,67 +187,110 @@ const useNewConvo = (index = 0) => {
             });
           }
 
-          if (conversation.assistant_id && !isAssistantEndpoint) {
+          if (currentAssistantId && !isAssistantEndpoint) {
             conversation.assistant_id = undefined;
           }
 
           const models = modelsConfig?.[defaultEndpoint] ?? [];
+          const defaultParamsEndpoint = getDefaultParamsEndpoint(endpointsConfig, defaultEndpoint);
           conversation = buildDefaultConvo({
             conversation,
             lastConversationSetup: activePreset as TConversation,
             endpoint: defaultEndpoint,
             models,
+            defaultParamsEndpoint,
           });
         }
 
-        if (!keepAddedConvos) {
-          clearAllConversations(true);
-        }
-        setConversation(conversation);
-        setSubmission({} as TSubmission);
-        if (!keepLatestMessage) {
-          clearAllLatestMessages();
+        if (disableParams === true) {
+          conversation.disableParams = true;
         }
 
-        if (conversation.conversationId === 'new' && !modelsData) {
-          const appTitle = localStorage.getItem(LocalStorageKeys.APP_TITLE);
+        if (!(keepAddedConvos ?? false)) {
+          clearAllConversations(true);
+        }
+        const isCancelled = conversation.conversationId?.startsWith('_');
+        if (isCancelled) {
+          logger.log(
+            'conversation',
+            'Cancelled conversation, setting to `new` in `useNewConvo`',
+            conversation,
+          );
+          setConversation({
+            ...conversation,
+            conversationId: Constants.NEW_CONVO as string,
+          });
+        } else {
+          logger.log('conversation', 'Setting conversation from `useNewConvo`', conversation);
+          setConversation(conversation);
+        }
+        setSubmission({} as TSubmission);
+        if (!(keepLatestMessage ?? false)) {
+          logger.log('latest_message', 'Clearing all latest messages');
+          clearAllLatestMessages();
+        }
+        if (isCancelled) {
+          return;
+        }
+
+        const searchParamsString = searchParams?.toString();
+        const getParams = () => (searchParamsString ? `?${searchParamsString}` : '');
+
+        if (conversation.conversationId === Constants.NEW_CONVO && !modelsData) {
+          const appTitle = localStorage.getItem(LocalStorageKeys.APP_TITLE) ?? '';
           if (appTitle) {
             document.title = appTitle;
           }
-          navigate('/c/new');
+          const path = `/c/${Constants.NEW_CONVO}${getParams()}`;
+          navigate(path, { state: { focusChat: true } });
+          return;
         }
 
-        clearTimeout(timeoutIdRef.current);
-        timeoutIdRef.current = setTimeout(() => {
-          const textarea = document.getElementById(mainTextareaId);
-          if (textarea) {
-            textarea.focus();
-          }
-        }, 150);
+        const path = `/c/${conversation.conversationId}${getParams()}`;
+        navigate(path, {
+          replace: true,
+          state: disableFocus ? {} : { focusChat: true },
+        });
       },
-    [endpointsConfig, defaultPreset, assistantsListMap, modelsQuery.data],
+    [endpointsConfig, defaultPreset, assistantsListMap, modelsQuery.data, hasAgentAccess],
   );
 
   const newConversation = useCallback(
-    ({
-      template = {},
+    function createNewConvo({
+      template: _template = {},
       preset: _preset,
       modelsData,
+      disableFocus,
       buildDefault = true,
       keepLatestMessage = false,
       keepAddedConvos = false,
+      disableParams,
     }: {
       template?: Partial<TConversation>;
       preset?: Partial<TPreset>;
       modelsData?: TModelsConfig;
       buildDefault?: boolean;
+      disableFocus?: boolean;
       keepLatestMessage?: boolean;
       keepAddedConvos?: boolean;
-    } = {}) => {
+      disableParams?: boolean;
+    } = {}) {
       pauseGlobalAudio();
+      if (!saveBadgesState) {
+        resetBadges();
+      }
+
+      const templateConvoId = _template.conversationId ?? '';
+      const paramEndpoint =
+        isParamEndpoint(_template.endpoint ?? '', _template.endpointType ?? '') === true ||
+        isParamEndpoint(_preset?.endpoint ?? '', _preset?.endpointType ?? '');
+      const template =
+        paramEndpoint === true && templateConvoId && templateConvoId === Constants.NEW_CONVO
+          ? { endpoint: _template.endpoint }
+          : _template;
 
       const conversation = {
-        conversationId: 'new',
+        conversationId: Constants.NEW_CONVO as string,
         title: 'New Chat',
         endpoint: null,
         ...template,
@@ -192,21 +299,38 @@ const useNewConvo = (index = 0) => {
       };
 
       let preset = _preset;
-      const defaultModelSpec = getDefaultModelSpec(startupConfig?.modelSpecs?.list);
-      if (!preset && startupConfig && startupConfig.modelSpecs?.prioritize && defaultModelSpec) {
-        preset = {
-          ...defaultModelSpec.preset,
-          iconURL: getModelSpecIconURL(defaultModelSpec),
-          spec: defaultModelSpec.name,
-        } as TConversation;
+      const result = getDefaultModelSpec(startupConfig);
+      const defaultModelSpec = result?.default ?? result?.last;
+      if (
+        !preset &&
+        startupConfig &&
+        (startupConfig.modelSpecs?.prioritize === true ||
+          (startupConfig.interface?.modelSelect ?? true) !== true ||
+          (result?.last != null && Object.keys(_template).length === 0)) &&
+        defaultModelSpec
+      ) {
+        preset = getModelSpecPreset(defaultModelSpec);
       }
 
-      if (conversation.conversationId === 'new' && !modelsData) {
+      applyModelSpecEffects({
+        startupConfig,
+        specName: preset?.spec,
+        convoId: conversation.conversationId,
+      });
+
+      if (conversation.conversationId === Constants.NEW_CONVO && !modelsData) {
         const filesToDelete = Array.from(files.values())
-          .filter((file) => file.filepath && file.source && !file.embedded && file.temp_file_id)
+          .filter(
+            (file) =>
+              file.filepath != null &&
+              file.filepath !== '' &&
+              file.source &&
+              !(file.embedded ?? false) &&
+              file.temp_file_id,
+          )
           .map((file) => ({
             file_id: file.file_id,
-            embedded: !!file.embedded,
+            embedded: !!(file.embedded ?? false),
             filepath: file.filepath as string,
             source: file.source as FileSources, // Ensure that the source is of type FileSources
           }));
@@ -226,16 +350,21 @@ const useNewConvo = (index = 0) => {
         buildDefault,
         keepLatestMessage,
         keepAddedConvos,
+        disableFocus,
+        disableParams,
       );
     },
     [
-      pauseGlobalAudio,
-      startupConfig,
-      saveDrafts,
-      switchToConversation,
       files,
       setFiles,
+      saveDrafts,
       mutateAsync,
+      resetBadges,
+      startupConfig,
+      saveBadgesState,
+      pauseGlobalAudio,
+      switchToConversation,
+      applyModelSpecEffects,
     ],
   );
 

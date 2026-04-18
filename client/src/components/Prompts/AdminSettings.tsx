@@ -1,161 +1,98 @@
-import { useMemo, useEffect } from 'react';
+import { useState } from 'react';
 import { ShieldEllipsis } from 'lucide-react';
-import { useForm, Controller } from 'react-hook-form';
-import { Permissions, SystemRoles, roleDefaults, PermissionTypes } from 'librechat-data-provider';
-import type { Control, UseFormSetValue, UseFormGetValues } from 'react-hook-form';
-import { OGDialog, OGDialogTitle, OGDialogContent, OGDialogTrigger } from '~/components/ui';
+import { Permissions, PermissionTypes } from 'librechat-data-provider';
+import { OGDialog, OGDialogTemplate, Button, useToastContext } from '@librechat/client';
+import { AdminSettingsDialog } from '~/components/ui';
 import { useUpdatePromptPermissionsMutation } from '~/data-provider';
-import { useLocalize, useAuthContext } from '~/hooks';
-import { Button, Switch } from '~/components/ui';
-import { useToastContext } from '~/Providers';
+import { useLocalize } from '~/hooks';
+import type { PermissionConfig } from '~/components/ui';
 
-type FormValues = Record<Permissions, boolean>;
-
-type LabelControllerProps = {
-  label: string;
-  promptPerm: Permissions;
-  control: Control<FormValues, unknown, FormValues>;
-  setValue: UseFormSetValue<FormValues>;
-  getValues: UseFormGetValues<FormValues>;
-};
-
-const defaultValues = roleDefaults[SystemRoles.USER];
-
-const LabelController: React.FC<LabelControllerProps> = ({
-  control,
-  promptPerm,
-  label,
-  getValues,
-  setValue,
-}) => (
-  <div className="mb-4 flex items-center justify-between gap-2">
-    <label
-      className="cursor-pointer select-none"
-      htmlFor={promptPerm}
-      onClick={() =>
-        setValue(promptPerm, !getValues(promptPerm), {
-          shouldDirty: true,
-        })
-      }
-    >
-      {label}
-    </label>
-    <Controller
-      name={promptPerm}
-      control={control}
-      render={({ field }) => (
-        <Switch
-          {...field}
-          checked={field.value}
-          onCheckedChange={field.onChange}
-          value={field?.value?.toString()}
-        />
-      )}
-    />
-  </div>
-);
+const permissions: PermissionConfig[] = [
+  { permission: Permissions.USE, labelKey: 'com_ui_prompts_allow_use' },
+  { permission: Permissions.CREATE, labelKey: 'com_ui_prompts_allow_create' },
+  { permission: Permissions.SHARE, labelKey: 'com_ui_prompts_allow_share' },
+  { permission: Permissions.SHARE_PUBLIC, labelKey: 'com_ui_prompts_allow_share_public' },
+];
 
 const AdminSettings = () => {
   const localize = useLocalize();
-  const { user, roles } = useAuthContext();
   const { showToast } = useToastContext();
-  const { mutate, isLoading } = useUpdatePromptPermissionsMutation({
+  const [confirmAdminUseChange, setConfirmAdminUseChange] = useState<{
+    newValue: boolean;
+    callback: (value: boolean) => void;
+  } | null>(null);
+
+  const mutation = useUpdatePromptPermissionsMutation({
     onSuccess: () => {
-      showToast({ status: 'success', message: localize('com_endpoint_preset_saved') });
+      showToast({ status: 'success', message: localize('com_ui_saved') });
     },
     onError: () => {
       showToast({ status: 'error', message: localize('com_ui_error_save_admin_settings') });
     },
   });
 
-  const {
-    reset,
-    control,
-    setValue,
-    getValues,
-    handleSubmit,
-    formState: { isSubmitting },
-  } = useForm<FormValues>({
-    mode: 'onChange',
-    defaultValues: useMemo(() => {
-      if (roles?.[SystemRoles.USER]) {
-        return roles[SystemRoles.USER][PermissionTypes.PROMPTS];
-      }
-
-      return defaultValues[PermissionTypes.PROMPTS];
-    }, [roles]),
-  });
-
-  useEffect(() => {
-    if (roles?.[SystemRoles.USER]?.[PermissionTypes.PROMPTS]) {
-      reset(roles[SystemRoles.USER][PermissionTypes.PROMPTS]);
-    }
-  }, [roles, reset]);
-
-  if (user?.role !== SystemRoles.ADMIN) {
-    return null;
-  }
-
-  const labelControllerData = [
-    {
-      promptPerm: Permissions.SHARED_GLOBAL,
-      label: localize('com_ui_prompts_allow_share_global'),
-    },
-    {
-      promptPerm: Permissions.USE,
-      label: localize('com_ui_prompts_allow_use'),
-    },
-    {
-      promptPerm: Permissions.CREATE,
-      label: localize('com_ui_prompts_allow_create'),
-    },
-  ];
-
-  const onSubmit = (data: FormValues) => {
-    mutate({ roleName: SystemRoles.USER, updates: data });
+  const handlePermissionConfirm = (
+    _permission: Permissions,
+    newValue: boolean,
+    onChange: (value: boolean) => void,
+  ) => {
+    setConfirmAdminUseChange({ newValue, callback: onChange });
   };
 
-  return (
-    <OGDialog>
-      <OGDialogTrigger asChild>
-        <Button
-          size={'sm'}
-          variant={'outline'}
-          className="h-10 w-fit gap-1 border transition-all dark:bg-transparent"
-        >
-          <ShieldEllipsis className="cursor-pointer" />
-          <span className="hidden sm:flex">{localize('com_ui_admin')}</span>
-        </Button>
-      </OGDialogTrigger>
-      <OGDialogContent className="bg-white dark:border-gray-700 dark:bg-gray-850 dark:text-gray-300">
-        <OGDialogTitle>{`${localize('com_ui_admin_settings')} - ${localize(
-          'com_ui_prompts',
-        )}`}</OGDialogTitle>
-        <form className="p-2" onSubmit={handleSubmit(onSubmit)}>
-          <div className="py-5">
-            {labelControllerData.map(({ promptPerm, label }) => (
-              <LabelController
-                key={promptPerm}
-                control={control}
-                promptPerm={promptPerm}
-                label={label}
-                getValues={getValues}
-                setValue={setValue}
-              />
-            ))}
-          </div>
-          <div className="flex justify-end">
-            <button
-              type="submit"
-              disabled={isSubmitting || isLoading}
-              className="btn rounded bg-green-500 font-bold text-white transition-all hover:bg-green-600"
-            >
-              {localize('com_ui_save')}
-            </button>
-          </div>
-        </form>
-      </OGDialogContent>
+  const trigger = (
+    <Button
+      size="sm"
+      variant="outline"
+      className="mr-2 h-10 w-fit gap-1 border transition-all dark:bg-transparent dark:hover:bg-surface-tertiary sm:m-0"
+    >
+      <ShieldEllipsis className="cursor-pointer" aria-hidden="true" />
+      <span className="hidden sm:flex">{localize('com_ui_admin')}</span>
+    </Button>
+  );
+
+  const confirmDialog = (
+    <OGDialog
+      open={confirmAdminUseChange !== null}
+      onOpenChange={(open) => {
+        if (!open) {
+          setConfirmAdminUseChange(null);
+        }
+      }}
+    >
+      <OGDialogTemplate
+        showCloseButton={true}
+        title={localize('com_ui_confirm_change')}
+        className="w-11/12 max-w-lg"
+        main={<p className="mb-4">{localize('com_ui_confirm_admin_use_change')}</p>}
+        selection={{
+          selectHandler: () => {
+            if (confirmAdminUseChange) {
+              confirmAdminUseChange.callback(confirmAdminUseChange.newValue);
+            }
+            setConfirmAdminUseChange(null);
+          },
+          selectClasses:
+            'bg-surface-destructive hover:bg-surface-destructive-hover text-white transition-colors duration-200',
+          selectText: localize('com_ui_confirm_action'),
+          isLoading: false,
+        }}
+      />
     </OGDialog>
+  );
+
+  return (
+    <AdminSettingsDialog
+      permissionType={PermissionTypes.PROMPTS}
+      sectionKey="com_ui_prompts"
+      permissions={permissions}
+      menuId="prompt-role-dropdown"
+      mutation={mutation}
+      trigger={trigger}
+      dialogContentClassName="max-w-lg border-border-light bg-surface-primary text-text-primary lg:w-1/4"
+      onPermissionConfirm={handlePermissionConfirm}
+      confirmPermissions={[Permissions.USE]}
+      extraContent={confirmDialog}
+    />
   );
 };
 
