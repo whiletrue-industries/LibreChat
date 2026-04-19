@@ -201,3 +201,116 @@ module "librechat" {
 
   task_role_policy_json = data.aws_iam_policy_document.mongo_backups_write.json
 }
+
+################################################################################
+# Feedback-insights scheduled tasks
+#
+# Two EventBridge rules trigger ECS RunTask on the shared Fargate cluster:
+#   - feedback-classify: daily at 02:00 UTC
+#   - feedback-discover: weekly on Sundays at 03:00 UTC
+#
+# The task definition ARN and execution role ARN are read via data sources
+# because modules/app does not expose them as outputs. The cluster ARN and
+# private subnet IDs come from the shared platform contract already loaded in
+# data.tf.
+################################################################################
+
+data "aws_ecs_task_definition" "librechat" {
+  task_definition = "librechat-${var.environment}-api"
+}
+
+data "aws_iam_role" "librechat_execution" {
+  name = "librechat-${var.environment}-api-execution-role"
+}
+
+data "aws_iam_policy_document" "feedback_scheduled_trust" {
+  statement {
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["events.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "feedback_scheduled" {
+  name               = "librechat-${var.environment}-feedback-scheduled"
+  assume_role_policy = data.aws_iam_policy_document.feedback_scheduled_trust.json
+}
+
+data "aws_iam_policy_document" "feedback_scheduled_run_task" {
+  statement {
+    actions   = ["ecs:RunTask"]
+    resources = [data.aws_ecs_task_definition.librechat.arn]
+  }
+  statement {
+    actions = ["iam:PassRole"]
+    resources = [
+      module.librechat.task_role_arn,
+      data.aws_iam_role.librechat_execution.arn,
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "feedback_scheduled_run_task" {
+  role   = aws_iam_role.feedback_scheduled.id
+  policy = data.aws_iam_policy_document.feedback_scheduled_run_task.json
+}
+
+resource "aws_cloudwatch_event_rule" "feedback_classify" {
+  name                = "librechat-${var.environment}-feedback-classify"
+  schedule_expression = "cron(0 2 * * ? *)"
+}
+
+resource "aws_cloudwatch_event_target" "feedback_classify" {
+  rule     = aws_cloudwatch_event_rule.feedback_classify.name
+  arn      = nonsensitive(local.contract.ecs.cluster_arn)
+  role_arn = aws_iam_role.feedback_scheduled.arn
+
+  ecs_target {
+    task_definition_arn = data.aws_ecs_task_definition.librechat.arn
+    launch_type         = "FARGATE"
+
+    network_configuration {
+      subnets          = nonsensitive(local.contract.network.private_subnet_ids)
+      security_groups  = [module.librechat.security_group_id]
+      assign_public_ip = false
+    }
+  }
+
+  input = jsonencode({
+    containerOverrides = [{
+      name    = "api"
+      command = ["node", "scripts/classify-feedback-topics.js"]
+    }]
+  })
+}
+
+resource "aws_cloudwatch_event_rule" "feedback_discover" {
+  name                = "librechat-${var.environment}-feedback-discover"
+  schedule_expression = "cron(0 3 ? * SUN *)"
+}
+
+resource "aws_cloudwatch_event_target" "feedback_discover" {
+  rule     = aws_cloudwatch_event_rule.feedback_discover.name
+  arn      = nonsensitive(local.contract.ecs.cluster_arn)
+  role_arn = aws_iam_role.feedback_scheduled.arn
+
+  ecs_target {
+    task_definition_arn = data.aws_ecs_task_definition.librechat.arn
+    launch_type         = "FARGATE"
+
+    network_configuration {
+      subnets          = nonsensitive(local.contract.network.private_subnet_ids)
+      security_groups  = [module.librechat.security_group_id]
+      assign_public_ip = false
+    }
+  }
+
+  input = jsonencode({
+    containerOverrides = [{
+      name    = "api"
+      command = ["node", "scripts/discover-feedback-clusters.js"]
+    }]
+  })
+}
