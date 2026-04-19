@@ -1,6 +1,8 @@
 import { TooltipAnchor } from '@librechat/client';
-import { useLocalize } from '~/hooks';
+import { useIsRTL, useLocalize } from '~/hooks';
 import { cn } from '~/utils';
+
+const TRANSLATE_X = 260;
 
 export default function NavToggle({
   onToggle,
@@ -20,6 +22,7 @@ export default function NavToggle({
   translateX?: boolean;
 }) {
   const localize = useLocalize();
+  const isRTL = useIsRTL();
   const transition = {
     transition: 'transform 0.3s ease, opacity 0.2s ease',
   };
@@ -46,14 +49,23 @@ export default function NavToggle({
 
   const ariaDescription = localize(actionKey, { 0: sidebarLabel });
 
+  const shouldTranslate = navVisible && translateX;
+  const translatePx = (() => {
+    if (!shouldTranslate) {
+      return 0;
+    }
+    const directionSign = side === 'right' ? -1 : 1;
+    const rtlSign = isRTL ? -1 : 1;
+    return directionSign * rtlSign * TRANSLATE_X;
+  })();
+  const rotateDeg = navVisible ? 0 : 180;
+
   return (
     <div
-      className={cn(
-        className,
-        '-translate-y-1/2 transition-transform',
-        navVisible ? 'rotate-0' : 'rotate-180',
-        navVisible && translateX ? 'translate-x-[260px]' : 'translate-x-0',
-      )}
+      className={cn(className, 'transition-transform')}
+      style={{
+        transform: `translateX(${translatePx}px) translateY(-50%) rotate(${rotateDeg}deg)`,
+      }}
       onMouseEnter={() => setIsHovering(true)}
       onMouseLeave={() => setIsHovering(false)}
     >

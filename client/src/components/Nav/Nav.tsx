@@ -17,6 +17,7 @@ import type { InfiniteQueryObserverResult } from '@tanstack/react-query';
 import type { ConversationListResponse } from 'librechat-data-provider';
 import type { List } from 'react-virtualized';
 import {
+  useIsRTL,
   useLocalize,
   useHasAccess,
   useAuthContext,
@@ -75,6 +76,7 @@ const Nav = memo(
     setNavVisible: React.Dispatch<React.SetStateAction<boolean>>;
   }) => {
     const localize = useLocalize();
+    const isRTL = useIsRTL();
     const { isAuthenticated } = useAuthContext();
     useTitleGeneration(isAuthenticated);
 
@@ -258,17 +260,19 @@ const Nav = memo(
     // Mobile: Fixed positioned sidebar that slides over content
     // Uses CSS transitions (not Framer Motion) to sync perfectly with content animation
     if (isSmallScreen) {
+      const hiddenOffset = isRTL ? sidebarWidth : -sidebarWidth;
       return (
         <>
           <div
             data-testid="nav"
             className={cn(
-              'nav fixed left-0 top-0 z-[110] h-full bg-surface-primary-alt',
+              'nav fixed top-0 z-[110] h-full bg-surface-primary-alt',
+              isRTL ? 'right-0' : 'left-0',
               navVisible && 'active',
             )}
             style={{
               width: sidebarWidth,
-              transform: navVisible ? 'translateX(0)' : `translateX(-${sidebarWidth}px)`,
+              transform: navVisible ? 'translateX(0)' : `translateX(${hiddenOffset}px)`,
               transition: 'transform 0.2s ease-out',
             }}
           >
@@ -279,7 +283,7 @@ const Nav = memo(
       );
     }
 
-    // Desktop: Inline sidebar with width transition
+    const desktopHiddenOffset = isRTL ? sidebarWidth : -sidebarWidth;
     return (
       <div
         className="flex-shrink-0 overflow-hidden"
@@ -291,7 +295,7 @@ const Nav = memo(
           style={{ width: sidebarWidth }}
           initial={false}
           animate={{
-            x: navVisible ? 0 : -sidebarWidth,
+            x: navVisible ? 0 : desktopHiddenOffset,
           }}
           transition={{ duration: 0.2, ease: 'easeOut' }}
         >

@@ -1,4 +1,5 @@
 import React from 'react';
+import { useIsRTL } from '~/hooks';
 import { cn } from '~/utils';
 
 interface ConvoLinkProps {
@@ -20,6 +21,7 @@ const ConvoLink: React.FC<ConvoLinkProps> = ({
   localize,
   children,
 }) => {
+  const isRTL = useIsRTL();
   return (
     <div
       className={cn(
@@ -48,7 +50,8 @@ const ConvoLink: React.FC<ConvoLinkProps> = ({
       </div>
       <div
         className={cn(
-          'pointer-events-none absolute bottom-0.5 right-0.5 top-0.5 w-20 rounded-r-md bg-gradient-to-l',
+          'pointer-events-none absolute bottom-0.5 end-0.5 top-0.5 w-20 rounded-e-md',
+          isRTL ? 'bg-gradient-to-r' : 'bg-gradient-to-l',
           isActiveConvo || isPopoverActive
             ? 'from-surface-active-alt'
             : 'from-surface-primary-alt from-0% to-transparent group-hover:from-surface-active-alt group-hover:from-40%',
