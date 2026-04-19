@@ -1,5 +1,6 @@
 export * from './Auth';
 export * from './AdminFeedback';
+export * from './AdminPrompts';
 export * from './Agents';
 export * from './Endpoints';
 export * from './Files';
