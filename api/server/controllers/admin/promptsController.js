@@ -13,7 +13,7 @@ function patchAgentForPublish(agentsClient, liveAgentIds) {
 
 async function listAgents(req, res) {
   try {
-    const agents = ['unified', 'takanon', 'budgetkey'];
+    const agents = ['unified'];
     const counts = await Promise.all(
       agents.map((a) =>
         AgentPrompt.countDocuments({ agentType: a, active: true }).then((c) => ({

@@ -30,23 +30,23 @@ describe('agent prompt schemas', () => {
     expect(indexes.find((i) => i.name === 'active_by_agent_section')).toBeDefined();
   });
 
-  it('accepts all valid agentType enum values', async () => {
+  it('accepts unified as the only valid agentType', async () => {
     const Prompt = mongoose.model('AgentPromptTest2', agentPromptSchema);
-    for (const type of ['unified', 'takanon', 'budgetkey'] as const) {
-      const doc = await Prompt.create({
-        agentType: type,
-        sectionKey: 'x',
-        body: 'y',
-      });
-      expect(doc.agentType).toBe(type);
-    }
+    const doc = await Prompt.create({
+      agentType: 'unified',
+      sectionKey: 'x',
+      body: 'y',
+    });
+    expect(doc.agentType).toBe('unified');
   });
 
-  it('rejects invalid agentType', async () => {
+  it('rejects non-unified agentTypes', async () => {
     const Prompt = mongoose.model('AgentPromptTest3', agentPromptSchema);
-    await expect(
-      Prompt.create({ agentType: 'wrong', sectionKey: 'x', body: 'y' }),
-    ).rejects.toThrow();
+    for (const bad of ['takanon', 'budgetkey', 'wrong']) {
+      await expect(
+        Prompt.create({ agentType: bad, sectionKey: 'x', body: 'y' }),
+      ).rejects.toThrow();
+    }
   });
 
   it('promptTestQuestion requires agentType + text, defaults enabled:true', async () => {

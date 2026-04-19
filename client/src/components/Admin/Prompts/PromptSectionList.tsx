@@ -4,11 +4,7 @@ import { useAdminPromptSections } from '~/data-provider/AdminPrompts/queries';
 import { useAuthContext, useLocalize } from '~/hooks';
 
 type LocalizeKey = Parameters<ReturnType<typeof useLocalize>>[0];
-const VALID: ReadonlyArray<'unified' | 'takanon' | 'budgetkey'> = [
-  'unified',
-  'takanon',
-  'budgetkey',
-];
+const VALID: ReadonlyArray<'unified'> = ['unified'];
 
 export default function PromptSectionList() {
   const localize = useLocalize();

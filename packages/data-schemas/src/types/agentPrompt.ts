@@ -1,6 +1,6 @@
 import type { Document, Types } from 'mongoose';
 
-export type AgentType = 'unified' | 'takanon' | 'budgetkey';
+export type AgentType = 'unified';
 
 export interface IAgentPrompt extends Document {
   agentType: AgentType;

@@ -297,7 +297,7 @@ export interface AdminFeedbackPendingResponse {
 }
 
 /* --- Admin Prompts --- */
-export type AdminPromptAgentType = 'unified' | 'takanon' | 'budgetkey';
+export type AdminPromptAgentType = 'unified';
 
 export interface AdminPromptAgentSummary {
   agentType: AdminPromptAgentType;

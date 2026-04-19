@@ -2,7 +2,7 @@ import type { Model, Types } from 'mongoose';
 import type { IAgentPrompt, IMessage } from '@librechat/data-schemas';
 import { assemble } from './assemble';
 
-export type AgentType = 'unified' | 'takanon' | 'budgetkey';
+export type AgentType = 'unified';
 
 export interface AgentPromptRow {
   _id: Types.ObjectId;

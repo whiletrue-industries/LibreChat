@@ -33,8 +33,6 @@
   "com_admin_feedback_topic_sparkline": "7-day sparkline",
   "com_admin_prompts_active_ago": "Active since {{relative}}",
   "com_admin_prompts_add_test_question": "Add question",
-  "com_admin_prompts_agent_budgetkey": "BudgetKey (budget-only)",
-  "com_admin_prompts_agent_takanon": "Takanon (legal-only)",
   "com_admin_prompts_agent_unified": "Unified (production)",
   "com_admin_prompts_change_note": "Change note",
   "com_admin_prompts_change_note_required": "Change note is required on publish.",

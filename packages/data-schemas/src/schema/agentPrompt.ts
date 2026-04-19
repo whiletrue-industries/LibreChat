@@ -4,7 +4,7 @@ import type { IAgentPrompt } from '../types/agentPrompt';
 const agentPromptSchema = new Schema<IAgentPrompt>({
   agentType: {
     type: String,
-    enum: ['unified', 'takanon', 'budgetkey'],
+    enum: ['unified'],
     required: true,
     index: true,
   },

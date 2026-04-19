@@ -69,15 +69,26 @@ module "librechat" {
     # see LibreChat/scripts/seed-botnim-agent.js and the one-time setup
     # documented in BOTNIM_BOOTSTRAP.md.
     ENDPOINTS = "agents"
+
+    # Admin prompt-management UI reads the live agent ID at boot so
+    # publish mutations can PATCH the agent's instructions. Value is
+    # the LibreChat agent-ID returned by seed-botnim-agent.js (format
+    # "agent_XYZ"). LC_INTERNAL_BASE is the loopback URL for the api
+    # container calling its own /api/agents routes. The takanon- and
+    # budgetkey-only bots are not wired into the admin UI; we only
+    # manage the unified (production) prompt through the UI.
+    LC_INTERNAL_BASE        = "http://localhost:3080"
+    BOTNIM_AGENT_ID_UNIFIED = var.botnim_agent_id_unified
   }
 
   secret_environment_variables = {
-    OPENAI_API_KEY     = aws_secretsmanager_secret.openai_api_key.arn
-    JWT_SECRET         = aws_secretsmanager_secret.jwt_secret.arn
-    JWT_REFRESH_SECRET = aws_secretsmanager_secret.jwt_refresh_secret.arn
-    CREDS_KEY          = aws_secretsmanager_secret.creds_key.arn
-    CREDS_IV           = aws_secretsmanager_secret.creds_iv.arn
-    MEILI_MASTER_KEY   = aws_secretsmanager_secret.meili_master_key.arn
+    OPENAI_API_KEY          = aws_secretsmanager_secret.openai_api_key.arn
+    JWT_SECRET              = aws_secretsmanager_secret.jwt_secret.arn
+    JWT_REFRESH_SECRET      = aws_secretsmanager_secret.jwt_refresh_secret.arn
+    CREDS_KEY               = aws_secretsmanager_secret.creds_key.arn
+    CREDS_IV                = aws_secretsmanager_secret.creds_iv.arn
+    MEILI_MASTER_KEY        = aws_secretsmanager_secret.meili_master_key.arn
+    LC_INTERNAL_ADMIN_TOKEN = aws_secretsmanager_secret.lc_internal_admin_token.arn
   }
 
   sidecar_containers = [

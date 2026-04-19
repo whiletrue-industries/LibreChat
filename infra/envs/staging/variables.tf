@@ -54,3 +54,14 @@ variable "botnim_api_url" {
   type        = string
   default     = null
 }
+
+# Admin prompt-management UI wiring. Only the unified (production) agent is
+# managed through the admin UI; the takanon-only and budgetkey-only bots are
+# intentionally not wired in. Empty string means "no live agent configured"
+# — publish will fail fast with a 500. Safe to leave empty until the unified
+# agent is seeded via seed-botnim-agent.js.
+variable "botnim_agent_id_unified" {
+  description = "LibreChat agent ID for the unified (production) Botnim bot. Read by api/server/index.js into app.locals.liveAgentIds.unified."
+  type        = string
+  default     = ""
+}

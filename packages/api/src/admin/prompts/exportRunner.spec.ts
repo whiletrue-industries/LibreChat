@@ -90,8 +90,6 @@ describe('runExport', () => {
     await runExport({ AgentPrompt, writer });
     const reads: Record<string, string> = {
       unified: '<!-- SECTION_KEY: a -->\nA',
-      takanon: '',
-      budgetkey: '',
     };
     writer.readFile = async (a) => reads[a];
     const out = await runExport({ AgentPrompt, writer });

@@ -42,3 +42,14 @@ resource "aws_secretsmanager_secret" "bootstrap_user_password" {
   name        = "librechat/${var.environment}/bootstrap-user-password"
   description = "Initial admin password seeded into LibreChat on first boot"
 }
+
+# Admin Bearer token used by realAgentsClient.js to call the LibreChat
+# /api/agents routes from inside the same process during publish/preview.
+# This is a self-call (http://localhost:3080 → same container), but JWT
+# auth still applies. Value should be a long-lived admin JWT minted
+# out-of-band via scripts/mint-admin-token.js (or equivalent) after the
+# admin user exists. Empty token means publish/preview no-ops safely.
+resource "aws_secretsmanager_secret" "lc_internal_admin_token" {
+  name        = "librechat/${var.environment}/lc-internal-admin-token"
+  description = "Bearer token for LibreChat self-calls from admin prompt-management service. Set value out-of-band after bootstrap user is created."
+}

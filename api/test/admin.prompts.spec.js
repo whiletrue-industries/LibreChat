@@ -99,7 +99,7 @@ beforeAll(async () => {
   app.use(express.json());
   app.use(passport.initialize());
   app.locals.agentsClient = agentsClientStub;
-  app.locals.liveAgentIds = { unified: 'live', takanon: 'live', budgetkey: 'live' };
+  app.locals.liveAgentIds = { unified: 'live' };
   app.use('/api/admin/prompts', require('~/server/routes/admin/prompts'));
 });
 
@@ -150,15 +150,12 @@ describe('GET /api/admin/prompts/agents', () => {
     expect(res.status).toBe(200);
     expect(res.body.agents).toEqual([
       { agentType: 'unified', activeSections: 0 },
-      { agentType: 'takanon', activeSections: 0 },
-      { agentType: 'budgetkey', activeSections: 0 },
     ]);
   });
 
   it('returns correct counts after seeding active rows', async () => {
     await seedActiveSection({ sectionKey: 'intro' });
     await seedActiveSection({ sectionKey: 'rules', ordinal: 1 });
-    await seedActiveSection({ agentType: 'takanon', sectionKey: 'intro' });
 
     const res = await request(app)
       .get('/api/admin/prompts/agents')
@@ -166,11 +163,7 @@ describe('GET /api/admin/prompts/agents', () => {
 
     expect(res.status).toBe(200);
     const unified = res.body.agents.find((a) => a.agentType === 'unified');
-    const takanon = res.body.agents.find((a) => a.agentType === 'takanon');
-    const budgetkey = res.body.agents.find((a) => a.agentType === 'budgetkey');
     expect(unified.activeSections).toBe(2);
-    expect(takanon.activeSections).toBe(1);
-    expect(budgetkey.activeSections).toBe(0);
   });
 });
 

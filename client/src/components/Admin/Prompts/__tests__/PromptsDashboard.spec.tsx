@@ -22,25 +22,17 @@ jest.mock('~/data-provider/AdminPrompts/queries', () => ({
 }));
 
 describe('PromptsDashboard', () => {
-  it('renders 3 agent cards', () => {
+  it('renders the unified agent card', () => {
     mockAgents.mockReturnValue({
       isLoading: false,
       isError: false,
       data: {
-        agents: [
-          { agentType: 'unified', activeSections: 10 },
-          { agentType: 'takanon', activeSections: 9 },
-          { agentType: 'budgetkey', activeSections: 5 },
-        ],
+        agents: [{ agentType: 'unified', activeSections: 10 }],
       },
     });
     render(<PromptsDashboard />);
     expect(screen.getByText('com_admin_prompts_agent_unified')).toBeInTheDocument();
-    expect(screen.getByText('com_admin_prompts_agent_takanon')).toBeInTheDocument();
-    expect(screen.getByText('com_admin_prompts_agent_budgetkey')).toBeInTheDocument();
     expect(screen.getByText('10')).toBeInTheDocument();
-    expect(screen.getByText('9')).toBeInTheDocument();
-    expect(screen.getByText('5')).toBeInTheDocument();
   });
 
   it('renders the title', () => {

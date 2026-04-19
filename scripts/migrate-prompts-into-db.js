@@ -24,7 +24,7 @@ async function main() {
   await mongoose.connect(mongoUri);
   const { AgentPrompt } = createModels(mongoose);
   let total = 0;
-  for (const agentType of ['unified', 'takanon', 'budgetkey']) {
+  for (const agentType of ['unified']) {
     const file = path.join(SPECS_DIR, agentType, 'agent.txt');
     const contents = fs.readFileSync(file, 'utf8');
     const n = await AdminPrompts.migrateAgentTextIntoDb({

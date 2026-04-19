@@ -24,7 +24,7 @@ export interface RunExportResult {
   committedSha: string | null;
 }
 
-const AGENTS: AgentType[] = ['unified', 'takanon', 'budgetkey'];
+const AGENTS: AgentType[] = ['unified'];
 
 export async function runExport(input: RunExportInput): Promise<RunExportResult> {
   const changed: AgentType[] = [];
