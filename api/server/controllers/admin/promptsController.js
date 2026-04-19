@@ -5,9 +5,9 @@ const { patchLibreChatAgent } = require('~/server/services/prompts/agentPatcher'
 
 const PREVIEW_TIMEOUT_MS = 90_000;
 
-function patchAgentForPublish(agentsClient) {
+function patchAgentForPublish(agentsClient, liveAgentIds) {
   return async (agentType, instructions) => {
-    await patchLibreChatAgent(agentsClient, agentType, instructions);
+    await patchLibreChatAgent(agentsClient, liveAgentIds, agentType, instructions);
   };
 }
 
@@ -94,7 +94,7 @@ async function publish(req, res) {
     }
     const row = await AdminPrompts.publish({
       AgentPrompt,
-      patchAgent: patchAgentForPublish(req.app.locals.agentsClient),
+      patchAgent: patchAgentForPublish(req.app.locals.agentsClient, req.app.locals.liveAgentIds),
       agentType: req.params.agent,
       sectionKey: req.params.key,
       parentVersionId,
@@ -153,7 +153,7 @@ async function restore(req, res) {
   try {
     const row = await AdminPrompts.restore({
       AgentPrompt,
-      patchAgent: patchAgentForPublish(req.app.locals.agentsClient),
+      patchAgent: patchAgentForPublish(req.app.locals.agentsClient, req.app.locals.liveAgentIds),
       agentType: req.params.agent,
       sectionKey: req.params.key,
       versionId: req.body.versionId,
