@@ -11,6 +11,8 @@ import {
 import { useAuthContext, useLocalize } from '~/hooks';
 import PromptDiff from './PromptDiff';
 import PromptHistory from './PromptHistory';
+import PromptPreview from './PromptPreview';
+import TestQuestions from './TestQuestions';
 
 type LocalizeKey = Parameters<ReturnType<typeof useLocalize>>[0];
 
@@ -146,6 +148,8 @@ export default function PromptEditor() {
         )}
       </div>
 
+      <PromptPreview agentType={agent} sectionKey={key} draftBody={body} />
+      <TestQuestions agentType={agent} />
       <PromptHistory agentType={agent} sectionKey={key} />
     </main>
   );
