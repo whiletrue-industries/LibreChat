@@ -25,6 +25,9 @@ export interface IMessage extends Document {
     rating: TFeedbackRating;
     tag: TFeedbackTag | undefined;
     text?: string;
+    topic?: string;
+    topicSource?: 'taxonomy' | 'llm' | 'llm-invalid' | 'taxonomy-retroactive';
+    topicClassifiedAt?: Date;
   };
   _meiliIndex?: boolean;
   files?: unknown[];
