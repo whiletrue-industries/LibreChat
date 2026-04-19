@@ -27,3 +27,5 @@ export { default as memorySchema } from './memory';
 export { default as groupSchema } from './group';
 export { default as feedbackTopicSchema } from './feedbackTopic';
 export { default as feedbackTopicPendingSchema } from './feedbackTopicPending';
+export { default as agentPromptSchema } from './agentPrompt';
+export { default as agentPromptTestQuestionSchema } from './agentPromptTestQuestion';

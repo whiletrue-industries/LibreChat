@@ -33,3 +33,5 @@ export * from './web';
 export * from './mcp';
 /* Feedback Topics */
 export * from './feedbackTopic';
+/* Agent Prompt Management (Botnim admin UI) */
+export * from './agentPrompt';
