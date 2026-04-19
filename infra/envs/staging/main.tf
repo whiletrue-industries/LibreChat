@@ -314,3 +314,33 @@ resource "aws_cloudwatch_event_target" "feedback_discover" {
     }]
   })
 }
+
+resource "aws_cloudwatch_event_rule" "prompts_export" {
+  name                = "librechat-${var.environment}-prompts-export"
+  schedule_expression = "cron(30 2 * * ? *)"
+  description         = "Nightly DB → rebuilding-bots/specs agent.txt export"
+}
+
+resource "aws_cloudwatch_event_target" "prompts_export" {
+  rule     = aws_cloudwatch_event_rule.prompts_export.name
+  arn      = nonsensitive(local.contract.ecs.cluster_arn)
+  role_arn = aws_iam_role.feedback_scheduled.arn
+
+  ecs_target {
+    task_definition_arn = data.aws_ecs_task_definition.librechat.arn
+    launch_type         = "FARGATE"
+
+    network_configuration {
+      subnets          = nonsensitive(local.contract.network.private_subnet_ids)
+      security_groups  = [module.librechat.security_group_id]
+      assign_public_ip = false
+    }
+  }
+
+  input = jsonencode({
+    containerOverrides = [{
+      name    = "api"
+      command = ["node", "scripts/export-prompts-to-git.js"]
+    }]
+  })
+}
