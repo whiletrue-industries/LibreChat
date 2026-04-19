@@ -158,11 +158,11 @@ const EditMessage = ({
           onKeyDown={handleKeyDown}
           data-testid="message-text-editor"
           className={cn(
-            'markdown prose dark:prose-invert light whitespace-pre-wrap break-words pl-3 md:pl-4',
+            'markdown prose dark:prose-invert light whitespace-pre-wrap break-words ps-3 md:ps-4',
             'm-0 w-full resize-none border-0 bg-transparent py-[10px]',
             'placeholder-text-secondary focus:ring-0 focus-visible:ring-0 md:py-3.5',
-            isRTL ? 'text-right' : 'text-left',
-            'max-h-[65vh] pr-3 md:max-h-[75vh] md:pr-4',
+            'text-start',
+            'max-h-[65vh] pe-3 md:max-h-[75vh] md:pe-4',
             removeFocusRings,
           )}
           aria-label={localize('com_ui_message_input')}
@@ -175,7 +175,7 @@ const EditMessage = ({
           render={
             <button
               ref={submitButtonRef}
-              className="btn btn-primary relative mr-2"
+              className="btn btn-primary relative me-2"
               disabled={isSubmitting}
               onClick={handleSubmit(resubmitMessage)}
             >
@@ -188,7 +188,7 @@ const EditMessage = ({
           render={
             <button
               ref={saveButtonRef}
-              className="btn btn-secondary relative mr-2"
+              className="btn btn-secondary relative me-2"
               disabled={isSubmitting}
               onClick={handleSubmit(updateMessage)}
             >

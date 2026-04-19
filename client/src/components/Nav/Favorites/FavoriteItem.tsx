@@ -73,11 +73,11 @@ export default function FavoriteItem({
 
   const renderIcon = () => {
     if (type === 'agent') {
-      return renderAgentAvatar(item as t.Agent, { size: 'icon', className: 'mr-2' });
+      return renderAgentAvatar(item as t.Agent, { size: 'icon', className: 'me-2' });
     }
     const model = item as FavoriteModel;
     return (
-      <div className="mr-2 h-5 w-5">
+      <div className="me-2 h-5 w-5">
         <MinimalIcon endpoint={model.endpoint} size={20} isCreatedByUser={false} />
       </div>
     );
@@ -117,14 +117,14 @@ export default function FavoriteItem({
       onKeyDown={handleKeyDown}
       data-testid="favorite-item"
     >
-      <div className="flex flex-1 items-center truncate pr-6">
+      <div className="flex flex-1 items-center truncate pe-6">
         {renderIcon()}
         <span className="truncate">{name}</span>
       </div>
 
       <div
         className={cn(
-          'absolute right-2 flex items-center',
+          'absolute end-2 flex items-center',
           isPopoverActive
             ? 'pointer-events-auto opacity-100'
             : 'pointer-events-none opacity-0 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100',

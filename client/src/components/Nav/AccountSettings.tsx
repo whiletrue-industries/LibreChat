@@ -27,14 +27,14 @@ function AccountSettings() {
         data-testid="nav-user"
         className="mt-text-sm flex h-auto w-full items-center gap-2 rounded-xl p-2 text-sm transition-all duration-200 ease-in-out hover:bg-surface-active-alt aria-[expanded=true]:bg-surface-active-alt"
       >
-        <div className="-ml-0.9 -mt-0.8 h-8 w-8 flex-shrink-0">
+        <div className="-ms-0.9 -mt-0.8 h-8 w-8 flex-shrink-0">
           <div className="relative flex">
             <Avatar user={user} size={32} />
           </div>
         </div>
         <div
-          className="mt-2 grow overflow-hidden text-ellipsis whitespace-nowrap text-left text-text-primary"
-          style={{ marginTop: '0', marginLeft: '0' }}
+          className="mt-2 grow overflow-hidden text-ellipsis whitespace-nowrap text-start text-text-primary"
+          style={{ marginTop: '0', marginInlineStart: '0' }}
         >
           {user?.name ?? user?.username ?? localize('com_nav_user')}
         </div>
@@ -46,13 +46,13 @@ function AccountSettings() {
           translate: '0 -4px',
         }}
       >
-        <div className="text-token-text-secondary ml-3 mr-2 py-2 text-sm" role="note">
+        <div className="text-token-text-secondary ms-3 me-2 py-2 text-sm" role="note">
           {user?.email ?? localize('com_nav_user')}
         </div>
         <DropdownMenuSeparator />
         {startupConfig?.balance?.enabled === true && balanceQuery.data != null && (
           <>
-            <div className="text-token-text-secondary ml-3 mr-2 py-2 text-sm" role="note">
+            <div className="text-token-text-secondary ms-3 me-2 py-2 text-sm" role="note">
               {localize('com_nav_balance')}:{' '}
               {new Intl.NumberFormat().format(Math.round(balanceQuery.data.tokenCredits))}
             </div>

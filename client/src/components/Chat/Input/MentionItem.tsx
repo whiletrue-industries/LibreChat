@@ -43,12 +43,12 @@ export default function MentionItem({
           <div className="truncate">
             <span className="font-medium">{name}</span>
             {description != null && description ? (
-              <span className="text-token-text-tertiary ml-2 text-sm font-light">
+              <span className="text-token-text-tertiary ms-2 text-sm font-light">
                 {description}
               </span>
             ) : null}
           </div>
-          <Clock4 size={16} className="ml-2 flex-shrink-0" />
+          <Clock4 size={16} className="ms-2 flex-shrink-0" />
         </div>
       </div>
     </button>

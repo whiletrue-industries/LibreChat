@@ -171,14 +171,14 @@ const CheckboxOption: React.FC<CheckboxOptionProps> = ({
               />
               <label
                 htmlFor={id}
-                className="ml-2 cursor-pointer select-none text-sm text-text-secondary hover:text-text-primary"
+                className="ms-2 cursor-pointer select-none text-sm text-text-secondary hover:text-text-primary"
               >
                 {localize(labelKey)}
               </label>
             </div>
           }
         />
-        <Ariakit.HovercardDisclosure className="ml-1 rounded-full text-text-secondary focus:outline-none focus:ring-2 focus:ring-ring">
+        <Ariakit.HovercardDisclosure className="ms-1 rounded-full text-text-secondary focus:outline-none focus:ring-2 focus:ring-ring">
           <VisuallyHidden>{localize(infoKey)}</VisuallyHidden>
           {chevronDown}
         </Ariakit.HovercardDisclosure>
@@ -369,7 +369,7 @@ export default function Fork({
         <div className="flex h-8 w-full items-center justify-center text-sm text-text-primary">
           {localize(activeSetting)}
           <Ariakit.HovercardProvider placement="right-start">
-            <div className="ml-auto flex h-6 w-6 items-center justify-center gap-1">
+            <div className="ms-auto flex h-6 w-6 items-center justify-center gap-1">
               <Ariakit.HovercardAnchor
                 render={
                   <button

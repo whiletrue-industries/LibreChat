@@ -58,7 +58,7 @@ export function SourceHovercard({
   const domain = getCleanDomain(source.link || '');
 
   return (
-    <span className="relative ml-0.5 inline-block">
+    <span className="relative ms-0.5 inline-block">
       <Ariakit.HovercardProvider showTimeout={150} hideTimeout={150}>
         <span className="flex items-center">
           <Ariakit.HovercardAnchor
@@ -66,7 +66,7 @@ export function SourceHovercard({
               isFile ? (
                 <button
                   onClick={onClick}
-                  className="ml-1 inline-block h-5 max-w-36 cursor-pointer items-center overflow-hidden text-ellipsis whitespace-nowrap rounded-xl border border-border-heavy bg-surface-secondary px-2 text-xs font-medium text-blue-600 no-underline transition-colors hover:bg-surface-hover dark:border-border-medium dark:text-blue-400 dark:hover:bg-surface-tertiary"
+                  className="ms-1 inline-block h-5 max-w-36 cursor-pointer items-center overflow-hidden text-ellipsis whitespace-nowrap rounded-xl border border-border-heavy bg-surface-secondary px-2 text-xs font-medium text-blue-600 no-underline transition-colors hover:bg-surface-hover dark:border-border-medium dark:text-blue-400 dark:hover:bg-surface-tertiary"
                   onMouseEnter={onMouseEnter}
                   onMouseLeave={onMouseLeave}
                   title={
@@ -80,7 +80,7 @@ export function SourceHovercard({
                   href={source.link}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="ml-1 inline-block h-5 max-w-36 cursor-pointer items-center overflow-hidden text-ellipsis whitespace-nowrap rounded-xl border border-border-heavy bg-surface-secondary px-2 text-xs font-medium no-underline transition-colors hover:bg-surface-hover dark:border-border-medium dark:hover:bg-surface-tertiary"
+                  className="ms-1 inline-block h-5 max-w-36 cursor-pointer items-center overflow-hidden text-ellipsis whitespace-nowrap rounded-xl border border-border-heavy bg-surface-secondary px-2 text-xs font-medium no-underline transition-colors hover:bg-surface-hover dark:border-border-medium dark:hover:bg-surface-tertiary"
                   onMouseEnter={onMouseEnter}
                   onMouseLeave={onMouseLeave}
                 >
@@ -89,7 +89,7 @@ export function SourceHovercard({
               )
             }
           />
-          <Ariakit.HovercardDisclosure className="ml-0.5 rounded-full text-text-primary focus:outline-none focus:ring-2 focus:ring-ring">
+          <Ariakit.HovercardDisclosure className="ms-0.5 rounded-full text-text-primary focus:outline-none focus:ring-2 focus:ring-ring">
             <VisuallyHidden>{localize('com_citation_more_details', { label })}</VisuallyHidden>
             <ChevronDown className="icon-sm" aria-hidden="true" />
           </Ariakit.HovercardDisclosure>
@@ -105,16 +105,16 @@ export function SourceHovercard({
               <>
                 <span className="mb-2 flex items-center">
                   {isFile ? (
-                    <div className="mr-2 flex h-4 w-4 items-center justify-center">
+                    <div className="me-2 flex h-4 w-4 items-center justify-center">
                       <Paperclip className="h-3 w-3 text-text-secondary" />
                     </div>
                   ) : (
-                    <FaviconImage domain={domain} className="mr-2" />
+                    <FaviconImage domain={domain} className="me-2" />
                   )}
                   {isFile ? (
                     <button
                       onClick={onClick}
-                      className="line-clamp-2 cursor-pointer overflow-hidden text-left text-sm font-bold text-[#0066cc] hover:underline dark:text-blue-400 md:line-clamp-3"
+                      className="line-clamp-2 cursor-pointer overflow-hidden text-start text-sm font-bold text-[#0066cc] hover:underline dark:text-blue-400 md:line-clamp-3"
                     >
                       {source.attribution || source.title || localize('com_file_source')}
                     </button>

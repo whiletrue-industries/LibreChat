@@ -196,7 +196,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
       cn(
         'md:py-3.5 m-0 w-full resize-none py-[13px] placeholder-black/60 bg-transparent dark:placeholder-white/60 [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)]',
         isCollapsed ? 'max-h-[52px]' : 'max-h-[45vh] md:max-h-[55vh]',
-        isMoreThanThreeRows ? 'pl-5' : 'px-5',
+        isMoreThanThreeRows ? 'ps-5' : 'px-5',
       ),
     [isCollapsed, isMoreThanThreeRows],
   );
@@ -299,7 +299,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
                     )}
                   />
                 </div>
-                <div className="flex flex-col items-start justify-start pr-2.5 pt-1.5">
+                <div className="flex flex-col items-start justify-start pe-2.5 pt-1.5">
                   <CollapseChat
                     isCollapsed={isCollapsed}
                     isScrollable={isMoreThanThreeRows}

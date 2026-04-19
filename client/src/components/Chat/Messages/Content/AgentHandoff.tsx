@@ -73,13 +73,13 @@ const AgentHandoff: React.FC<AgentHandoffProps> = ({ name, args: _args = '' }) =
         </span>
         {hasInfo && (
           <ChevronDown
-            className={cn('ml-1 h-3 w-3 transition-transform', showInfo && 'rotate-180')}
+            className={cn('ms-1 h-3 w-3 transition-transform', showInfo && 'rotate-180')}
             aria-hidden="true"
           />
         )}
       </div>
       {hasInfo && showInfo && (
-        <div className="ml-8 mt-2 rounded-md bg-surface-secondary p-3 text-xs">
+        <div className="ms-8 mt-2 rounded-md bg-surface-secondary p-3 text-xs">
           <div className="mb-1 font-medium text-text-secondary">
             {localize('com_ui_handoff_instructions')}:
           </div>

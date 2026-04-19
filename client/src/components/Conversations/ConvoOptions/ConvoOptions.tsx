@@ -188,7 +188,7 @@ function ConvoOptions({
       {
         label: localize('com_ui_share'),
         onClick: shareHandler,
-        icon: <Share2 className="icon-sm mr-2 text-text-primary" aria-hidden="true" />,
+        icon: <Share2 className="icon-sm me-2 text-text-primary" aria-hidden="true" />,
         show: startupConfig && startupConfig.sharedLinksEnabled,
         ariaHasPopup: 'dialog' as const,
         ariaControls: 'share-conversation-dialog',
@@ -200,7 +200,7 @@ function ConvoOptions({
       {
         label: localize('com_ui_rename'),
         onClick: renameHandler,
-        icon: <Pen className="icon-sm mr-2 text-text-primary" aria-hidden="true" />,
+        icon: <Pen className="icon-sm me-2 text-text-primary" aria-hidden="true" />,
       },
       {
         label: localize('com_ui_duplicate'),
@@ -209,7 +209,7 @@ function ConvoOptions({
         icon: isDuplicateLoading ? (
           <Spinner className="size-4" />
         ) : (
-          <CopyPlus className="icon-sm mr-2 text-text-primary" aria-hidden="true" />
+          <CopyPlus className="icon-sm me-2 text-text-primary" aria-hidden="true" />
         ),
       },
       {
@@ -219,13 +219,13 @@ function ConvoOptions({
         icon: isArchiveLoading ? (
           <Spinner className="size-4" />
         ) : (
-          <Archive className="icon-sm mr-2 text-text-primary" aria-hidden="true" />
+          <Archive className="icon-sm me-2 text-text-primary" aria-hidden="true" />
         ),
       },
       {
         label: localize('com_ui_delete'),
         onClick: deleteHandler,
-        icon: <Trash className="icon-sm mr-2 text-text-primary" aria-hidden="true" />,
+        icon: <Trash className="icon-sm me-2 text-text-primary" aria-hidden="true" />,
         ariaHasPopup: 'dialog' as const,
         ariaControls: 'delete-conversation-dialog',
         /** NOTE: THE FOLLOWING PROPS ARE REQUIRED FOR MENU ITEMS THAT OPEN DIALOGS */

@@ -214,7 +214,7 @@ const HoverButtons = ({
         icon={isCopied ? <CheckMark className="h-[18px] w-[18px]" /> : <Clipboard size="19" />}
         isLast={isLast}
         className={cn(
-          'ml-0 flex items-center gap-1.5 text-xs',
+          'ms-0 flex items-center gap-1.5 text-xs',
           isSubmitting && isCreatedByUser ? 'md:opacity-0 md:group-hover:opacity-100' : '',
         )}
       />

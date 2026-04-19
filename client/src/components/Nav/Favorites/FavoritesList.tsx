@@ -23,14 +23,14 @@ import store from '~/store';
 
 const FavoriteItemSkeleton = () => (
   <div className="flex w-full items-center rounded-lg px-3 py-2">
-    <Skeleton className="mr-2 h-5 w-5 rounded-full" />
+    <Skeleton className="me-2 h-5 w-5 rounded-full" />
     <Skeleton className="h-4 w-24" />
   </div>
 );
 
 const MarketplaceSkeleton = () => (
   <div className="flex w-full items-center rounded-lg px-3 py-2">
-    <Skeleton className="mr-2 h-5 w-5" />
+    <Skeleton className="me-2 h-5 w-5" />
     <Skeleton className="h-4 w-28" />
   </div>
 );
@@ -337,8 +337,8 @@ export default function FavoritesList({
                 }}
                 data-testid="nav-agents-marketplace-button"
               >
-                <div className="flex flex-1 items-center truncate pr-6">
-                  <div className="mr-2 h-5 w-5">
+                <div className="flex flex-1 items-center truncate pe-6">
+                  <div className="me-2 h-5 w-5">
                     <LayoutGrid className="h-5 w-5 text-text-primary" />
                   </div>
                   <span className="truncate">{localize('com_agents_marketplace')}</span>

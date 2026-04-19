@@ -102,7 +102,7 @@ const DateLabel: FC<{ groupName: string; isFirst?: boolean }> = memo(({ groupNam
       aria-label={localize('com_a11y_chats_date_section', {
         date: localize(groupName as TranslationKeys) || groupName,
       })}
-      className={cn('pl-1 pt-1 text-text-secondary', isFirst === true ? 'mt-0' : 'mt-2')}
+      className={cn('ps-1 pt-1 text-text-secondary', isFirst === true ? 'mt-0' : 'mt-2')}
       style={{ fontSize: '0.7rem' }}
     >
       {localize(groupName as TranslationKeys) || groupName}
@@ -366,7 +366,7 @@ const Conversations: FC<ConversationsProps> = ({
       {isSearchLoading ? (
         <div className="flex flex-1 items-center justify-center">
           <Spinner className="text-text-primary" />
-          <span className="ml-2 text-text-primary">{localize('com_ui_loading')}</span>
+          <span className="ms-2 text-text-primary">{localize('com_ui_loading')}</span>
         </div>
       ) : (
         <div className="flex-1">

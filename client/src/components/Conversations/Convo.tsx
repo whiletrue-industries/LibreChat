@@ -268,7 +268,7 @@ export default function Conversation({
       )}
       <div
         className={cn(
-          'mr-2 flex origin-left',
+          'me-2 flex origin-left',
           isPopoverActive || isActiveConvo
             ? 'pointer-events-auto scale-x-100 opacity-100'
             : 'pointer-events-none max-w-0 scale-x-0 opacity-0 group-focus-within:pointer-events-auto group-focus-within:max-w-[60px] group-focus-within:scale-x-100 group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:max-w-[60px] group-hover:scale-x-100 group-hover:opacity-100',

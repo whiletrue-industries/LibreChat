@@ -90,7 +90,7 @@ export function CompositeCitation(props: CompositeCitationProps) {
         </span>
       )}
       <span className="mb-2 flex items-center">
-        <FaviconImage domain={getCleanDomain(currentSource.link || '')} className="mr-2" />
+        <FaviconImage domain={getCleanDomain(currentSource.link || '')} className="me-2" />
         <a
           href={currentSource.link}
           target="_blank"

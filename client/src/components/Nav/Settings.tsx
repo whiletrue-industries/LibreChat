@@ -156,7 +156,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
               )}
             >
               <DialogTitle
-                className="mb-1 flex items-center justify-between p-6 pb-5 text-left"
+                className="mb-1 flex items-center justify-between p-6 pb-5 text-start"
                 as="div"
               >
                 <h2 className="text-lg font-medium leading-6 text-text-primary">
@@ -195,7 +195,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                   <Tabs.List
                     aria-label="Settings"
                     className={cn(
-                      'min-w-auto max-w-auto relative -ml-[8px] flex flex-shrink-0 flex-col flex-nowrap overflow-auto sm:max-w-none',
+                      'min-w-auto max-w-auto relative -ms-[8px] flex flex-shrink-0 flex-col flex-nowrap overflow-auto sm:max-w-none',
                       isSmallScreen
                         ? 'flex-row rounded-xl bg-surface-secondary'
                         : 'sticky top-0 h-full',
@@ -219,7 +219,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                       </Tabs.Trigger>
                     ))}
                   </Tabs.List>
-                  <div className="overflow-auto sm:w-full sm:max-w-none md:pr-0.5 md:pt-0.5">
+                  <div className="overflow-auto sm:w-full sm:max-w-none md:pe-0.5 md:pt-0.5">
                     <Tabs.Content value={SettingsTabValues.GENERAL} tabIndex={-1}>
                       <General />
                     </Tabs.Content>
