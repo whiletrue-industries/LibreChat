@@ -53,6 +53,7 @@ export * from './admin/feedback/fakeLlm';
 export * from './admin/feedback/llmAdapter';
 export * from './admin/feedback/proposeClusters';
 export * from './admin/feedback/discoverRunner';
+export * from './admin/feedback/FeedbackAnalytics';
 /* types */
 export type * from './mcp/types';
 export type * from './flow/types';
