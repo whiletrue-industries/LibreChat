@@ -51,6 +51,8 @@ export { memoryDiagnostics } from './utils/memory';
 export * from './admin/feedback/runner';
 export * from './admin/feedback/fakeLlm';
 export * from './admin/feedback/llmAdapter';
+export * from './admin/feedback/proposeClusters';
+export * from './admin/feedback/discoverRunner';
 /* types */
 export type * from './mcp/types';
 export type * from './flow/types';
