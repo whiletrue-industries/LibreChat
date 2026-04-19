@@ -18,6 +18,7 @@ jest.mock('~/data-provider/AdminPrompts/queries', () => ({
   useRestoreAdminPrompt: () => ({ mutate: jest.fn() }),
   useAdminPromptTestQuestions: () => ({ data: { questions: [] } }),
   usePutAdminPromptTestQuestions: () => ({ mutate: jest.fn() }),
+  useAdminPromptVersionUsage: () => ({ isLoading: false, data: undefined }),
 }));
 
 describe('PromptsDashboard', () => {

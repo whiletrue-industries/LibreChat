@@ -52,6 +52,7 @@ jest.mock('~/data-provider/AdminPrompts/queries', () => ({
   useRestoreAdminPrompt: () => ({ mutate: jest.fn(), isLoading: false }),
   useAdminPromptTestQuestions: () => ({ data: mockTestQuestionsData }),
   usePutAdminPromptTestQuestions: () => ({ mutate: jest.fn(), isLoading: false }),
+  useAdminPromptVersionUsage: () => ({ isLoading: false, data: undefined }),
 }));
 
 describe('PromptEditor', () => {
