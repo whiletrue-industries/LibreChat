@@ -18,7 +18,7 @@ import {
 } from '@librechat/client';
 import { ThemeSelector, LangSelector } from '~/components/Nav/SettingsTabs/General/General';
 import { ShareArtifactsContainer } from './ShareArtifacts';
-import { useLocalize, useDocumentTitle } from '~/hooks';
+import { useLocalize, useDocumentTitle, isRTLLang } from '~/hooks';
 import { useGetStartupConfig } from '~/data-provider';
 import { ShareContext } from '~/Providers';
 import { ShareMessagesProvider } from './ShareMessagesProvider';
@@ -82,6 +82,7 @@ function SharedView() {
 
       requestAnimationFrame(() => {
         document.documentElement.lang = userLang;
+        document.documentElement.dir = isRTLLang(userLang) ? 'rtl' : 'ltr';
       });
 
       setLangcode(userLang);

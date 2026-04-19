@@ -4,7 +4,7 @@ import { useRecoilState } from 'recoil';
 import { Dropdown, ThemeContext } from '@librechat/client';
 import ArchivedChats from './ArchivedChats';
 import ToggleSwitch from '../ToggleSwitch';
-import { useLocalize } from '~/hooks';
+import { useLocalize, isRTLLang } from '~/hooks';
 import store from '~/store';
 
 const toggleSwitchConfigs = [
@@ -171,6 +171,7 @@ function General() {
 
       requestAnimationFrame(() => {
         document.documentElement.lang = userLang;
+        document.documentElement.dir = isRTLLang(userLang) ? 'rtl' : 'ltr';
       });
       setLangcode(userLang);
       Cookies.set('lang', userLang, { expires: 365 });

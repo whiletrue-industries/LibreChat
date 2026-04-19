@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en-US">
+<html lang="en-US" dir="ltr">
   <head>
     <meta charset="utf-8" />
     <base href="/" />
@@ -21,6 +21,25 @@
         height: 100%;
       }
     </style>
+    <script>
+      (function () {
+        var RTL_LANGS = ['he', 'ar', 'fa', 'ug'];
+        var storedLang = null;
+        try {
+          storedLang = localStorage.getItem('lang');
+        } catch (e) {
+          storedLang = null;
+        }
+        if (storedLang == null || storedLang === '') {
+          storedLang = (typeof navigator !== 'undefined' && (navigator.language || (navigator.languages && navigator.languages[0]))) || 'en-US';
+        }
+        storedLang = storedLang.replace(/^"|"$/g, '');
+        var primary = (storedLang.split('-')[0] || storedLang).toLowerCase();
+        var dir = RTL_LANGS.indexOf(primary) !== -1 ? 'rtl' : 'ltr';
+        document.documentElement.setAttribute('dir', dir);
+        document.documentElement.setAttribute('lang', storedLang);
+      })();
+    </script>
     <script>
       const theme = localStorage.getItem('color-theme');
       const loadingContainerStyle = document.createElement('style');
