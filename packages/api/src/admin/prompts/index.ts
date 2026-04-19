@@ -31,3 +31,5 @@ export type {
   PreviewQuestionResult,
   RunPreviewInput,
 } from './preview';
+export { migrateAgentTextIntoDb } from './migrate';
+export type { MigrateInput } from './migrate';
