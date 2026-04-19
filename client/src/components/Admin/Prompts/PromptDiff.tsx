@@ -14,11 +14,11 @@ export default function PromptDiff({
   height = '40vh',
 }: PromptDiffProps) {
   return (
-    <div dir="rtl" className="rounded border border-border-medium">
+    <div className="rounded border border-border-medium">
       <DiffEditor
         height={height}
         language="markdown"
-        theme="vs-dark"
+        theme="vs"
         original={current}
         modified={draft}
         options={{
