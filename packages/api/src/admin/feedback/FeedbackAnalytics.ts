@@ -244,3 +244,88 @@ export async function aggregateOverview(filter: OverviewFilter): Promise<Overvie
     byTool,
   };
 }
+
+export interface DrillDownFilter {
+  Message: Model<unknown>;
+  topic?: string;
+  rating?: 'thumbsUp' | 'thumbsDown';
+  pageSize?: number;
+  cursor?: string;
+}
+
+export interface DrillDownResponse {
+  messages: unknown[];
+  nextCursor: string | null;
+}
+
+export async function listMessagesByFilter(f: DrillDownFilter): Promise<DrillDownResponse> {
+  const pageSize = f.pageSize ?? 25;
+  const match: FilterQuery<Record<string, unknown>> = {
+    isCreatedByUser: false,
+    feedback: { $exists: true },
+  };
+  if (f.topic) {
+    match['feedback.topic'] = f.topic;
+  }
+  if (f.rating) {
+    match['feedback.rating'] = f.rating;
+  }
+  if (f.cursor) {
+    match.createdAt = { $lt: new Date(f.cursor) };
+  }
+  const messages = (await f.Message.find(match)
+    .sort({ createdAt: -1 })
+    .limit(pageSize + 1)
+    .lean()) as unknown as Array<{ createdAt: Date }>;
+  let nextCursor: string | null = null;
+  if (messages.length > pageSize) {
+    messages.pop();
+    const last = messages[messages.length - 1];
+    nextCursor = last.createdAt.toISOString();
+  }
+  return { messages, nextCursor };
+}
+
+interface PendingDoc {
+  proposedKey: string;
+  labelHe: string;
+  labelEn: string;
+  rawLabels: string[];
+}
+
+export interface ApprovePendingInput {
+  Message: Model<unknown>;
+  Topic: Model<unknown>;
+  Pending: Model<unknown>;
+  pendingId: string;
+  rewrite?: boolean;
+  reviewedBy?: string;
+}
+
+export async function approvePendingTopic(input: ApprovePendingInput): Promise<void> {
+  const pending = (await input.Pending.findById(input.pendingId).lean()) as PendingDoc | null;
+  if (!pending) {
+    throw new Error('pending topic not found');
+  }
+  await input.Topic.create({
+    key: pending.proposedKey,
+    labelHe: pending.labelHe,
+    labelEn: pending.labelEn,
+    keywords: [],
+    active: true,
+    createdBy: input.reviewedBy,
+  });
+  if (input.rewrite === true && pending.rawLabels.length > 0) {
+    await input.Message.updateMany(
+      { 'feedback.topic': { $in: pending.rawLabels } },
+      {
+        $set: {
+          'feedback.topic': pending.proposedKey,
+          'feedback.topicSource': 'taxonomy-retroactive',
+        },
+      },
+      { strict: false },
+    );
+  }
+  await input.Pending.deleteOne({ _id: input.pendingId });
+}
