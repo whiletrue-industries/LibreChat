@@ -44,15 +44,8 @@ const trusted_proxy = Number(TRUST_PROXY) || 1; /* trust first proxy by default 
 
 const app = express();
 
-const { buildRealAgentsClient } = require('./services/prompts/realAgentsClient');
-app.locals.agentsClient = buildRealAgentsClient({
-  apiBase: process.env.LC_INTERNAL_BASE || 'http://localhost:3080',
-  authToken: process.env.LC_INTERNAL_ADMIN_TOKEN || '',
-});
 app.locals.liveAgentIds = {
   unified: process.env.BOTNIM_AGENT_ID_UNIFIED,
-  takanon: process.env.BOTNIM_AGENT_ID_TAKANON,
-  budgetkey: process.env.BOTNIM_AGENT_ID_BUDGETKEY,
 };
 
 const startServer = async () => {

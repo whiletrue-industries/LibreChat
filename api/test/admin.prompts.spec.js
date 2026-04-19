@@ -5,8 +5,8 @@
  * passport-jwt strategy, admin + user user seeds.
  *
  * Exercises the REAL AdminPrompts service (no mocking of the service),
- * using an in-memory MongoDB. The outbound agentsClient is stubbed with
- * no-op jest fns so the publish path can call patchAgent without a real
+ * using an in-memory MongoDB. The patchLibreChatAgent side-effect is stubbed
+ * with a jest.fn() so the publish path can run without a real
  * shadow-agent backend.
  */
 
@@ -21,6 +21,15 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
 process.env.JWT_SECRET = 'admin-prompts-test-secret';
 process.env.JWT_REFRESH_SECRET = 'admin-prompts-refresh-secret';
 
+// The controller now updates the live Agent via ~/models/Agent.updateAgent on
+// publish. That module pulls in the full LibreChat agents stack which isn't
+// needed (or importable) in this unit. Stub it to a spy so publish succeeds
+// and the test can still assert the side effect was triggered.
+const mockPatchLibreChatAgent = jest.fn().mockResolvedValue(undefined);
+jest.mock('~/server/services/prompts/agentPatcher', () => ({
+  patchLibreChatAgent: (...args) => mockPatchLibreChatAgent(...args),
+}));
+
 const { SystemRoles } = require('librechat-data-provider');
 const { Strategy: JwtStrategy, ExtractJwt } = require('passport-jwt');
 const { AgentPrompt, AgentPromptTestQuestion } = require('~/db/models');
@@ -30,7 +39,6 @@ let memServer;
 let adminToken;
 let userToken;
 let adminUserId;
-let agentsClientStub;
 
 beforeAll(async () => {
   memServer = await MongoMemoryServer.create();
@@ -83,22 +91,9 @@ beforeAll(async () => {
     ),
   );
 
-  agentsClientStub = {
-    patchAgent: jest.fn().mockResolvedValue({}),
-    chat: jest.fn().mockResolvedValue({ answer: '', toolCalls: [] }),
-    getAgent: jest
-      .fn()
-      .mockResolvedValue({ id: 'live', name: 'n', model: 'm', instructions: '' }),
-    createAgent: jest
-      .fn()
-      .mockResolvedValue({ id: 'shadow', name: 'n', model: 'm', instructions: '' }),
-    deleteAgent: jest.fn().mockResolvedValue(undefined),
-  };
-
   app = express();
   app.use(express.json());
   app.use(passport.initialize());
-  app.locals.agentsClient = agentsClientStub;
   app.locals.liveAgentIds = { unified: 'live' };
   app.use('/api/admin/prompts', require('~/server/routes/admin/prompts'));
 });
@@ -278,7 +273,12 @@ describe('POST /api/admin/prompts/:agent/sections/:key/publish', () => {
     expect(res.body.active.body).toBe('published body');
     expect(res.body.active.active).toBe(true);
     expect(res.body.active.changeNote).toBe('real change');
-    expect(agentsClientStub.patchAgent).toHaveBeenCalledTimes(1);
+    expect(mockPatchLibreChatAgent).toHaveBeenCalledTimes(1);
+    expect(mockPatchLibreChatAgent).toHaveBeenCalledWith(
+      { unified: 'live' },
+      'unified',
+      expect.stringContaining('published body'),
+    );
 
     const old = await AgentPrompt.findById(active._id).lean();
     expect(old.active).toBe(false);

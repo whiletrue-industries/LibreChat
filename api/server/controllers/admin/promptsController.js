@@ -2,12 +2,13 @@ const { AdminPrompts } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { AgentPrompt, AgentPromptTestQuestion } = require('~/db/models');
 const { patchLibreChatAgent } = require('~/server/services/prompts/agentPatcher');
+const { buildRealAgentsClient } = require('~/server/services/prompts/realAgentsClient');
 
 const PREVIEW_TIMEOUT_MS = 90_000;
 
-function patchAgentForPublish(agentsClient, liveAgentIds) {
+function patchAgentForPublish(liveAgentIds) {
   return async (agentType, instructions) => {
-    await patchLibreChatAgent(agentsClient, liveAgentIds, agentType, instructions);
+    await patchLibreChatAgent(liveAgentIds, agentType, instructions);
   };
 }
 
@@ -94,7 +95,7 @@ async function publish(req, res) {
     }
     const row = await AdminPrompts.publish({
       AgentPrompt,
-      patchAgent: patchAgentForPublish(req.app.locals.agentsClient, req.app.locals.liveAgentIds),
+      patchAgent: patchAgentForPublish(req.app.locals.liveAgentIds),
       agentType: req.params.agent,
       sectionKey: req.params.key,
       parentVersionId,
@@ -135,8 +136,12 @@ async function preview(req, res) {
         .sort({ ordinal: 1 })
         .lean()
     ).map((q) => q.text);
+    const client = buildRealAgentsClient({
+      apiBase: process.env.LC_INTERNAL_BASE || 'http://localhost:3080',
+      authToken: (req.headers.authorization || '').replace(/^Bearer\s+/i, ''),
+    });
     const out = await AdminPrompts.runPreview({
-      client: req.app.locals.agentsClient,
+      client,
       liveAgentId: (req.app.locals.liveAgentIds || {})[req.params.agent],
       draftInstructions,
       questions,
@@ -153,7 +158,7 @@ async function restore(req, res) {
   try {
     const row = await AdminPrompts.restore({
       AgentPrompt,
-      patchAgent: patchAgentForPublish(req.app.locals.agentsClient, req.app.locals.liveAgentIds),
+      patchAgent: patchAgentForPublish(req.app.locals.liveAgentIds),
       agentType: req.params.agent,
       sectionKey: req.params.key,
       versionId: req.body.versionId,
