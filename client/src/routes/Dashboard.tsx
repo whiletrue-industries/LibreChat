@@ -6,6 +6,7 @@ import {
   EmptyPromptPreview,
 } from '~/components/Prompts';
 import { FeedbackDashboard } from '~/components/Admin/Feedback';
+import { PromptsDashboard } from '~/components/Admin/Prompts';
 import DashboardRoute from './Layouts/Dashboard';
 
 const dashboardRoutes = {
@@ -76,6 +77,10 @@ const dashboardRoutes = {
     {
       path: 'feedback',
       element: <FeedbackDashboard />,
+    },
+    {
+      path: 'prompts',
+      element: <PromptsDashboard />,
     },
     {
       path: '*',
