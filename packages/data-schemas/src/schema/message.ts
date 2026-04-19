@@ -90,6 +90,20 @@ const messageSchema: Schema<IMessage> = new Schema(
           type: String,
           required: false,
         },
+        topic: {
+          type: String,
+          required: false,
+          index: true,
+        },
+        topicSource: {
+          type: String,
+          enum: ['taxonomy', 'llm', 'llm-invalid', 'taxonomy-retroactive'],
+          required: false,
+        },
+        topicClassifiedAt: {
+          type: Date,
+          required: false,
+        },
       },
       default: undefined,
       required: false,

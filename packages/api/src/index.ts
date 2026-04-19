@@ -47,6 +47,8 @@ export * from './cache';
 export * from './stream';
 /* Diagnostics */
 export { memoryDiagnostics } from './utils/memory';
+/* Admin / Feedback */
+export * as AdminFeedback from './admin/feedback';
 /* types */
 export type * from './mcp/types';
 export type * from './flow/types';

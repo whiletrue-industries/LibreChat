@@ -5,6 +5,7 @@ import {
   CreatePromptForm,
   EmptyPromptPreview,
 } from '~/components/Prompts';
+import { FeedbackDashboard } from '~/components/Admin/Feedback';
 import DashboardRoute from './Layouts/Dashboard';
 
 const dashboardRoutes = {
@@ -71,6 +72,10 @@ const dashboardRoutes = {
           element: <PromptForm />,
         },
       ],
+    },
+    {
+      path: 'feedback',
+      element: <FeedbackDashboard />,
     },
     {
       path: '*',
