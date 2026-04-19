@@ -18,6 +18,7 @@ export type { RunInput, RunStats } from './runner';
 export { runDiscover } from './discoverRunner';
 export type { RunDiscoverInput, RunDiscoverResult } from './discoverRunner';
 export { aggregateOverview, approvePendingTopic, listMessagesByFilter } from './FeedbackAnalytics';
+export { seedIfEmpty } from './seed';
 export type {
   ApprovePendingInput,
   DrillDownFilter,

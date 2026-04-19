@@ -3,10 +3,10 @@
 
 const path = require('path');
 const mongoose = require('mongoose');
-const { messageSchema } = require('@librechat/data-schemas');
+const { messageSchema, feedbackTopicSchema } = require('@librechat/data-schemas');
 
 const { AdminFeedback } = require(path.join(__dirname, '..', 'packages', 'api', 'dist', 'index.js'));
-const { run, buildFakeLlm, buildOpenAiLlm } = AdminFeedback;
+const { run, buildFakeLlm, buildOpenAiLlm, seedIfEmpty } = AdminFeedback;
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
@@ -23,6 +23,13 @@ async function main() {
 
   await mongoose.connect(mongoUri);
   const Message = mongoose.models.Message || mongoose.model('Message', messageSchema);
+
+  const FeedbackTopic =
+    mongoose.models.FeedbackTopic || mongoose.model('FeedbackTopic', feedbackTopicSchema);
+  const seeded = await seedIfEmpty(FeedbackTopic);
+  if (seeded > 0) {
+    console.log(JSON.stringify({ stage: 'seeded', count: seeded }));
+  }
 
   try {
     const stats = await run({ Message, llm, limit, dryRun });
