@@ -10,6 +10,7 @@ import {
 } from '~/data-provider/AdminPrompts/queries';
 import { useAuthContext, useLocalize } from '~/hooks';
 import PromptDiff from './PromptDiff';
+import PromptHistory from './PromptHistory';
 
 type LocalizeKey = Parameters<ReturnType<typeof useLocalize>>[0];
 
@@ -144,6 +145,8 @@ export default function PromptEditor() {
           <div className="text-xs text-red-600">Publish failed.</div>
         )}
       </div>
+
+      <PromptHistory agentType={agent} sectionKey={key} />
     </main>
   );
 }
