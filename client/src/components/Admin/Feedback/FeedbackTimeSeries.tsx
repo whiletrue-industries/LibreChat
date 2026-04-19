@@ -60,7 +60,7 @@ export default function FeedbackTimeSeries({ points }: Props) {
   return (
     <figure
       aria-label={`${localize('com_admin_feedback_kpi_feedback_rate')} / ${localize('com_admin_feedback_kpi_positive_pct')}`}
-      className="mb-6 rounded-lg border border-border-medium p-4"
+      className="mb-6 rounded-lg border border-border-medium bg-surface-primary-alt p-4 text-text-primary"
     >
       <svg
         viewBox={`0 0 ${CHART_W} ${CHART_H}`}
@@ -80,7 +80,7 @@ export default function FeedbackTimeSeries({ points }: Props) {
                   x2={INNER_W}
                   y2={y}
                   stroke="currentColor"
-                  strokeOpacity={0.1}
+                  strokeOpacity={0.25}
                   strokeWidth={1}
                 />
                 <text
@@ -90,7 +90,7 @@ export default function FeedbackTimeSeries({ points }: Props) {
                   dominantBaseline="middle"
                   fontSize={10}
                   fill="currentColor"
-                  fillOpacity={0.5}
+                  fillOpacity={0.8}
                 >
                   {tick}%
                 </text>
@@ -111,7 +111,7 @@ export default function FeedbackTimeSeries({ points }: Props) {
                 textAnchor="middle"
                 fontSize={10}
                 fill="currentColor"
-                fillOpacity={0.5}
+                fillOpacity={0.8}
               >
                 {p.date.slice(5)}
               </text>
@@ -129,7 +129,7 @@ export default function FeedbackTimeSeries({ points }: Props) {
           <polyline
             points={toPolyline(series, 'positivePct')}
             fill="none"
-            stroke="#818181"
+            stroke="#a1a1aa"
             strokeWidth={2}
             strokeLinejoin="round"
             strokeLinecap="round"
@@ -143,7 +143,7 @@ export default function FeedbackTimeSeries({ points }: Props) {
           {localize('com_admin_feedback_kpi_feedback_rate')}
         </span>
         <span className="flex items-center gap-1">
-          <span aria-hidden="true" className="inline-block h-2 w-4 rounded" style={{ background: '#818181' }} />
+          <span aria-hidden="true" className="inline-block h-2 w-4 rounded" style={{ background: '#a1a1aa' }} />
           {localize('com_admin_feedback_kpi_positive_pct')}
         </span>
       </figcaption>

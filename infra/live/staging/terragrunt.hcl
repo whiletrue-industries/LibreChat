@@ -9,10 +9,8 @@ terraform {
 inputs = {
   environment = "staging"
 
-  # Pinned to mainstream LibreChat v0.8.4. The image at
-  # 377114444836.dkr.ecr.il-central-1.amazonaws.com/librechat:v0.8.4
-  # is a mirror of ghcr.io/danny-avila/librechat:v0.8.4. Bump this
-  # when cutting over to a new upstream release after validating on
-  # this branch.
-  image_tag = "v0.8.4-botnim-rtl-fb2"
+  # Driven by the IMAGE_TAG env var so `make deploy-staging TAG=...`
+  # stays the single source of truth. Fallback default is the last
+  # known-good tag — bump only when stabilizing on a new baseline.
+  image_tag = get_env("IMAGE_TAG", "v0.8.4-botnim-feedback-v4")
 }

@@ -59,8 +59,8 @@ export default function FeedbackDashboard() {
   }
 
   return (
-    <main className="mx-auto max-w-6xl p-6">
-      <h1 className="mb-4 text-xl font-semibold">
+    <main className="mx-auto max-w-6xl bg-surface-primary p-6 text-text-primary">
+      <h1 className="mb-4 text-xl font-semibold text-text-primary">
         {localize('com_admin_feedback_title')}
       </h1>
       <FilterBar value={filter} onChange={setFilter} onRefresh={() => overview.refetch()} />

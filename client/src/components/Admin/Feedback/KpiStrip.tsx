@@ -29,12 +29,12 @@ export default function KpiStrip({ kpis }: Props) {
       {cards.map((card) => (
         <div
           key={card.labelKey}
-          className="rounded-lg border border-border-medium p-4"
+          className="rounded-lg border border-border-medium bg-surface-primary-alt p-4"
         >
-          <div className="text-xs text-text-secondary">
+          <div className="text-xs font-medium text-text-secondary">
             {localize(card.labelKey)}
           </div>
-          <div className="mt-1 text-2xl font-semibold">{card.value}</div>
+          <div className="mt-1 text-2xl font-semibold text-text-primary">{card.value}</div>
         </div>
       ))}
     </div>

@@ -33,13 +33,13 @@ export default function TopicTable({ rows, onSelect }: Props) {
   const sorted = useMemo(() => [...rows].sort((a, b) => b.total - a.total), [rows]);
   if (sorted.length === 0) {
     return (
-      <div className="mb-6 rounded-lg border border-border-medium p-4 text-center text-sm text-text-secondary">
+      <div className="mb-6 rounded-lg border border-border-medium bg-surface-primary-alt p-4 text-center text-sm text-text-secondary">
         {localize('com_admin_feedback_empty')}
       </div>
     );
   }
   return (
-    <div className="mb-6 overflow-hidden rounded-lg border border-border-medium">
+    <div className="mb-6 overflow-hidden rounded-lg border border-border-medium bg-surface-primary-alt text-text-primary">
       <table className="w-full text-sm">
         <thead className="bg-surface-tertiary">
           <tr>

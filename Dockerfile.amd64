@@ -1,9 +1,13 @@
 FROM --platform=linux/amd64 377114444836.dkr.ecr.il-central-1.amazonaws.com/librechat:v0.8.4
 ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
+USER root
 RUN rm -rf /app/client/dist
 COPY client/dist /app/client/dist
 COPY api /app/api
+COPY scripts /app/scripts
+COPY packages/api/dist /app/packages/api/dist
+COPY packages/data-schemas/dist /app/packages/data-schemas/dist
+COPY packages/data-provider/dist /app/packages/data-provider/dist
 COPY librechat.yaml /app/librechat.yaml
-USER root
 RUN chmod -R a+rwX /app/client/dist
 RUN sh -c 'set -e; for f in /app/client/dist/assets/locales.*.js; do sed -i "s/com_ui_privacy_policy:\"Privacy policy\"/com_ui_privacy_policy:\"מדיניות הפרטיות\"/; s/com_ui_terms_of_service:\"Terms of service\"/com_ui_terms_of_service:\"תנאי השימוש באתר\"/" "$f"; rm -f "$f.br" "$f.gz"; gzip -9 -k "$f"; done'
