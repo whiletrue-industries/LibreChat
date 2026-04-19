@@ -68,6 +68,11 @@ export enum QueryKeys {
   adminFeedbackOverview = 'adminFeedbackOverview',
   adminFeedbackMessages = 'adminFeedbackMessages',
   adminFeedbackPending = 'adminFeedbackPending',
+  /* Admin Prompts */
+  adminPromptsAgents = 'adminPromptsAgents',
+  adminPromptsSections = 'adminPromptsSections',
+  adminPromptsVersions = 'adminPromptsVersions',
+  adminPromptTestQuestions = 'adminPromptTestQuestions',
 }
 
 // Dynamic query keys that require parameters
@@ -103,4 +108,10 @@ export enum MutationKeys {
   /* Admin Feedback */
   approveAdminFeedbackPending = 'approveAdminFeedbackPending',
   rejectAdminFeedbackPending = 'rejectAdminFeedbackPending',
+  /* Admin Prompts */
+  saveAdminPromptDraft = 'saveAdminPromptDraft',
+  publishAdminPrompt = 'publishAdminPrompt',
+  previewAdminPrompt = 'previewAdminPrompt',
+  restoreAdminPrompt = 'restoreAdminPrompt',
+  putAdminPromptTestQuestions = 'putAdminPromptTestQuestions',
 }
