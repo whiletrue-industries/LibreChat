@@ -159,6 +159,51 @@ Four PRs in order. Each is independently shippable.
 3. **Initial load** (`LibreChat` or standalone script) — `scripts/migrate-prompts-into-db.js` parses the marker-augmented files and populates `prompts` with `{ active: true, isDraft: false, createdBy: 'migration' }`. One-shot, idempotent.
 4. **UI + API + nightly git export** (`LibreChat`) — the actual /d/prompts feature. Shipped last so the DB is populated before anyone can see the page.
 
+## Usage timeline (B1 — post-approval addition)
+
+For each version in `PromptHistory`, show the window during which it was live and the conversations that ran against it. Zero schema changes on `messages`; we derive usage from `publishedAt` timestamps.
+
+**Window semantics**
+- Version `V` of section `S` was live from `V.publishedAt` (inclusive) to `next(V).publishedAt` (exclusive), where `next(V)` is the next published row with the same `{agentType, sectionKey}` ordered by `publishedAt`. The currently-active row has no upper bound (open-ended window).
+- Because the agent's `instructions` field updates atomically on Publish, a message's `createdAt` landing in that window == that message saw `V` as part of the assembled prompt.
+
+**New endpoint**
+```
+GET /api/admin/prompts/:agent/sections/:key/versions/:versionId/usage?limit=50
+→ {
+    windowStart: ISOString,
+    windowEnd:   ISOString | null,     // null = still current
+    messageCount: number,
+    conversationCount: number,
+    conversations: [                     // top-N by message count, newest-first
+      { conversationId, title?, lastMessageAt, messageCount }
+    ]
+  }
+```
+
+Query shape (Mongo):
+```
+messages.find({
+  isCreatedByUser: false,
+  endpoint: 'agents',
+  model: <liveAgentIds[agentType]>,
+  createdAt: { $gte: windowStart, $lt: windowEnd ?? now }
+}).distinct('conversationId') → group → sort → limit
+```
+
+**UI placement**
+- Each row in `PromptHistory.tsx` gets a "View usage" disclosure button.
+- On expand, fetches the usage endpoint and renders: `<windowStart> → <windowEnd | "current">`, total message + conversation counts, a compact list of the top-20 conversations (each a deep link to `/c/:conversationId?highlight=<first-msg>`).
+- Active version's button label: "View current usage (open window)".
+
+**Cost bounds**
+- Read-only. Hits a well-indexed `messages` collection (`{endpoint, createdAt}` index already present for /feedback aggregations).
+- One call per history-row expand → cacheable for 5 min via react-query per-version.
+
+**Not in scope (would need B2)**
+- Attributing a specific assistant message straddling a publish-moment to the "new" vs "old" version. Window math puts it on whichever side `createdAt` falls — indistinguishable from B2 for >99% of real traffic.
+- Attributing usage per-section rather than per-agent. Under B1 the finest granularity is the agent-wide window; the "which exact section change mattered" inference belongs in a later diff-view feature.
+
 ## Open / deferred
 
 - **Cross-environment prompt promotion.** For now, staging and prod each have their own `prompts` collection. Copying a validated prompt from staging → prod is manual (mongoexport + mongoimport scoped to one `{agentType, sectionKey}`). v2.

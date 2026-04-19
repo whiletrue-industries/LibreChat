@@ -1,4 +1,4 @@
-# Admin Prompt Management UI — Implementation Plan
+# Admin Prompt Management UI — Implementation Plan (29 tasks)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -3034,7 +3034,437 @@ git commit -F /tmp/task27-commit.txt
 
 ---
 
-## Task 28: Final push + PR
+## Task 28 (inserted): Usage timeline — `getVersionUsage` + history-row UI
+
+**Files:**
+- Modify: `packages/api/src/admin/prompts/PromptsService.ts` (append `getVersionUsage`)
+- Modify: `packages/api/src/admin/prompts/PromptsService.spec.ts` (append tests)
+- Modify: `packages/api/src/admin/prompts/index.ts` (export)
+- Modify: `api/server/routes/admin/prompts.js` (new route)
+- Modify: `api/server/controllers/admin/promptsController.js` (new controller)
+- Modify: `packages/data-provider/src/api-endpoints.ts`, `data-service.ts`, `types/queries.ts`, `keys.ts` (new endpoint + types + key)
+- Modify: `client/src/data-provider/AdminPrompts/queries.ts` (new hook)
+- Modify: `client/src/components/Admin/Prompts/PromptHistory.tsx` (disclosure + rendering)
+- Modify: `client/src/locales/en/translation.json` (5 new keys)
+
+- [ ] **Step 1: Append tests to PromptsService.spec.ts**
+
+```ts
+// inside the existing file
+
+describe('PromptsService.getVersionUsage', () => {
+  let mem: MongoMemoryServer;
+  let Prompt: mongoose.Model<unknown>;
+  let Message: mongoose.Model<unknown>;
+
+  beforeAll(async () => {
+    mem = await MongoMemoryServer.create();
+    await mongoose.connect(mem.getUri());
+    Prompt = mongoose.model('PromptUsage', promptSchema);
+    // Minimal message schema that matches what LibreChat writes
+    const messageSchema = new mongoose.Schema({
+      conversationId: String,
+      messageId: String,
+      isCreatedByUser: Boolean,
+      endpoint: String,
+      model: String,
+      createdAt: Date,
+    });
+    Message = mongoose.model('MessageUsage', messageSchema);
+  });
+
+  afterAll(async () => {
+    await mongoose.disconnect();
+    await mem.stop();
+  });
+
+  beforeEach(async () => {
+    await Prompt.deleteMany({});
+    await Message.deleteMany({});
+  });
+
+  async function seedVersions() {
+    const v1 = await Prompt.create({
+      agentType: 'unified',
+      sectionKey: 'preamble',
+      body: 'v1',
+      ordinal: 0,
+      active: false,
+      isDraft: false,
+      publishedAt: new Date('2026-04-01'),
+    });
+    const v2 = await Prompt.create({
+      agentType: 'unified',
+      sectionKey: 'preamble',
+      body: 'v2',
+      ordinal: 0,
+      active: true,
+      isDraft: false,
+      publishedAt: new Date('2026-04-10'),
+    });
+    return { v1, v2 };
+  }
+
+  it('returns window bounds, counts, and top conversations for a past version', async () => {
+    const { getVersionUsage } = await import('./PromptsService');
+    const { v1, v2 } = await seedVersions();
+    await Message.create([
+      // inside v1's window
+      { conversationId: 'c1', isCreatedByUser: false, endpoint: 'agents', model: 'agent_live', createdAt: new Date('2026-04-02') },
+      { conversationId: 'c1', isCreatedByUser: false, endpoint: 'agents', model: 'agent_live', createdAt: new Date('2026-04-03') },
+      { conversationId: 'c2', isCreatedByUser: false, endpoint: 'agents', model: 'agent_live', createdAt: new Date('2026-04-04') },
+      // user messages don't count
+      { conversationId: 'c1', isCreatedByUser: true, endpoint: 'agents', model: 'agent_live', createdAt: new Date('2026-04-02') },
+      // after v2 published — belongs to v2, not v1
+      { conversationId: 'c3', isCreatedByUser: false, endpoint: 'agents', model: 'agent_live', createdAt: new Date('2026-04-11') },
+    ]);
+    const out = await getVersionUsage({
+      Prompt,
+      Message,
+      agentType: 'unified',
+      sectionKey: 'preamble',
+      versionId: v1._id,
+      liveAgentId: 'agent_live',
+      limit: 50,
+    });
+    expect(out.windowStart).toEqual(new Date('2026-04-01'));
+    expect(out.windowEnd).toEqual(new Date('2026-04-10'));
+    expect(out.messageCount).toBe(3);
+    expect(out.conversationCount).toBe(2);
+    expect(out.conversations.map((c) => c.conversationId).sort()).toEqual(['c1', 'c2']);
+    const c1 = out.conversations.find((c) => c.conversationId === 'c1');
+    expect(c1?.messageCount).toBe(2);
+  });
+
+  it('returns open-ended window (windowEnd: null) for the current active version', async () => {
+    const { getVersionUsage } = await import('./PromptsService');
+    const { v2 } = await seedVersions();
+    await Message.create({
+      conversationId: 'c3',
+      isCreatedByUser: false,
+      endpoint: 'agents',
+      model: 'agent_live',
+      createdAt: new Date('2026-04-11'),
+    });
+    const out = await getVersionUsage({
+      Prompt,
+      Message,
+      agentType: 'unified',
+      sectionKey: 'preamble',
+      versionId: v2._id,
+      liveAgentId: 'agent_live',
+      limit: 50,
+    });
+    expect(out.windowEnd).toBeNull();
+    expect(out.messageCount).toBe(1);
+  });
+
+  it('throws when versionId is not for this (agent, section)', async () => {
+    const { getVersionUsage } = await import('./PromptsService');
+    const stray = await Prompt.create({
+      agentType: 'unified',
+      sectionKey: 'different_key',
+      body: 'x',
+      ordinal: 0,
+      active: true,
+      isDraft: false,
+      publishedAt: new Date('2026-04-01'),
+    });
+    await expect(
+      getVersionUsage({
+        Prompt,
+        Message,
+        agentType: 'unified',
+        sectionKey: 'preamble',
+        versionId: stray._id,
+        liveAgentId: 'agent_live',
+        limit: 50,
+      }),
+    ).rejects.toThrow(/does not match/i);
+  });
+});
+```
+
+- [ ] **Step 2: Fail**
+
+```bash
+cd /Users/amir/Development/anubanu/parlibot/LibreChat
+npm run test:ci --prefix packages/api -- --testPathPattern='admin/prompts/PromptsService'
+```
+Expected: the new 3 tests fail with "getVersionUsage is not a function".
+
+- [ ] **Step 3: Implement — append to `PromptsService.ts`**
+
+```ts
+export interface GetVersionUsageInput extends BaseDeps {
+  Message: Model<unknown>;
+  agentType: AgentType;
+  sectionKey: string;
+  versionId: Types.ObjectId;
+  liveAgentId: string;
+  limit: number;
+}
+
+export interface VersionUsageConversation {
+  conversationId: string;
+  messageCount: number;
+  lastMessageAt: Date;
+}
+
+export interface VersionUsage {
+  windowStart: Date;
+  windowEnd: Date | null;
+  messageCount: number;
+  conversationCount: number;
+  conversations: VersionUsageConversation[];
+}
+
+export async function getVersionUsage(
+  input: GetVersionUsageInput,
+): Promise<VersionUsage> {
+  const target = (await input.Prompt.findById(input.versionId).lean()) as
+    | PromptRow
+    | null;
+  if (!target) {
+    throw new Error(`version ${input.versionId.toString()} not found`);
+  }
+  if (
+    target.agentType !== input.agentType ||
+    target.sectionKey !== input.sectionKey
+  ) {
+    throw new Error(
+      'version does not match agentType/sectionKey',
+    );
+  }
+  const windowStart = target.publishedAt ?? target.createdAt;
+  const next = (await input.Prompt.findOne({
+    agentType: input.agentType,
+    sectionKey: input.sectionKey,
+    isDraft: false,
+    publishedAt: { $gt: windowStart },
+  })
+    .sort({ publishedAt: 1 })
+    .lean()) as PromptRow | null;
+  const windowEnd = next?.publishedAt ?? null;
+
+  const match: Record<string, unknown> = {
+    isCreatedByUser: false,
+    endpoint: 'agents',
+    model: input.liveAgentId,
+    createdAt: {
+      $gte: windowStart,
+      ...(windowEnd ? { $lt: windowEnd } : {}),
+    },
+  };
+
+  const [agg] = await input.Message.aggregate([
+    { $match: match },
+    {
+      $facet: {
+        totals: [{ $count: 'messageCount' }],
+        conversations: [
+          {
+            $group: {
+              _id: '$conversationId',
+              messageCount: { $sum: 1 },
+              lastMessageAt: { $max: '$createdAt' },
+            },
+          },
+          { $sort: { lastMessageAt: -1 } },
+          { $limit: input.limit },
+        ],
+      },
+    },
+  ]);
+
+  const messageCount = agg.totals[0]?.messageCount ?? 0;
+  const conversations: VersionUsageConversation[] = (
+    agg.conversations as Array<{
+      _id: string;
+      messageCount: number;
+      lastMessageAt: Date;
+    }>
+  ).map((c) => ({
+    conversationId: c._id,
+    messageCount: c.messageCount,
+    lastMessageAt: c.lastMessageAt,
+  }));
+  return {
+    windowStart,
+    windowEnd,
+    messageCount,
+    conversationCount: conversations.length, // approximate within limit; good enough for UI
+    conversations,
+  };
+}
+```
+
+- [ ] **Step 4: Pass**
+
+```bash
+npm run test:ci --prefix packages/api -- --testPathPattern='admin/prompts/PromptsService'
+```
+Expected: all earlier + 3 new = 10 tests pass.
+
+- [ ] **Step 5: Export from barrel + rebuild**
+
+Append to `packages/api/src/admin/prompts/index.ts`:
+```ts
+export { getVersionUsage } from './PromptsService';
+export type {
+  GetVersionUsageInput,
+  VersionUsage,
+  VersionUsageConversation,
+} from './PromptsService';
+```
+
+Rebuild:
+```bash
+npm run --workspace=packages/api build
+```
+
+- [ ] **Step 6: Route + controller**
+
+In `api/server/controllers/admin/promptsController.js`, append:
+```js
+async function getUsage(req, res) {
+  try {
+    const { Prompt, Message } = require('~/db/models');
+    const usage = await AdminPrompts.getVersionUsage({
+      Prompt,
+      Message,
+      agentType: req.params.agent,
+      sectionKey: req.params.key,
+      versionId: req.params.versionId,
+      liveAgentId: req.app.locals.liveAgentIds[req.params.agent],
+      limit: Number(req.query.limit) || 50,
+    });
+    res.status(200).json(usage);
+  } catch (err) {
+    logger.error('[admin/prompts] getUsage failed', err);
+    const code = /does not match|not found/i.test(err.message) ? 404 : 500;
+    res.status(code).json({ error: err.message });
+  }
+}
+
+module.exports.getUsage = getUsage;
+```
+
+In `api/server/routes/admin/prompts.js`, append (before `module.exports`):
+```js
+router.get('/:agent/sections/:key/versions/:versionId/usage', controller.getUsage);
+```
+
+- [ ] **Step 7: data-provider wiring**
+
+In `packages/data-provider/src/types/queries.ts`, add:
+```ts
+export interface AdminPromptUsageConversation {
+  conversationId: string;
+  messageCount: number;
+  lastMessageAt: string;
+}
+
+export interface AdminPromptUsage {
+  windowStart: string;
+  windowEnd: string | null;
+  messageCount: number;
+  conversationCount: number;
+  conversations: AdminPromptUsageConversation[];
+}
+```
+
+In `api-endpoints.ts`:
+```ts
+export const adminPromptVersionUsage = (
+  agent: string,
+  key: string,
+  versionId: string,
+  limit = 50,
+): string =>
+  `/api/admin/prompts/${encodeURIComponent(agent)}/sections/${encodeURIComponent(key)}/versions/${encodeURIComponent(versionId)}/usage?limit=${limit}`;
+```
+
+In `data-service.ts`:
+```ts
+export const getAdminPromptVersionUsage = (
+  agent: string,
+  key: string,
+  versionId: string,
+  limit = 50,
+): Promise<AdminPromptUsage> =>
+  request.get(endpoints.adminPromptVersionUsage(agent, key, versionId, limit));
+```
+
+In `keys.ts`, add to `QueryKeys`:
+```ts
+  adminPromptVersionUsage = 'adminPromptVersionUsage',
+```
+
+Rebuild `npm run build:data-provider`.
+
+- [ ] **Step 8: Client hook + UI**
+
+Append to `client/src/data-provider/AdminPrompts/queries.ts`:
+```ts
+import type { AdminPromptUsage } from 'librechat-data-provider';
+
+export const useAdminPromptVersionUsage = (
+  agent: string,
+  key: string,
+  versionId: string | null,
+) =>
+  useQuery<AdminPromptUsage>(
+    [QueryKeys.adminPromptVersionUsage, agent, key, versionId],
+    () =>
+      dataService.getAdminPromptVersionUsage(agent, key, versionId as string),
+    { enabled: Boolean(versionId), staleTime: 5 * 60 * 1000 },
+  );
+```
+
+In `client/src/locales/en/translation.json`, add:
+```json
+  "com_admin_prompts_usage": "Usage",
+  "com_admin_prompts_usage_window": "Active from {{start}} to {{end}}",
+  "com_admin_prompts_usage_window_current": "Active from {{start}} (current)",
+  "com_admin_prompts_usage_counts": "{{messageCount}} messages across {{conversationCount}} conversations",
+  "com_admin_prompts_usage_view_conversation": "View conversation",
+```
+
+In `client/src/components/Admin/Prompts/PromptHistory.tsx`, add a per-row disclosure button labeled `com_admin_prompts_usage`. On expand, call `useAdminPromptVersionUsage(agent, key, version._id)` and render:
+- Window line via `com_admin_prompts_usage_window` (or `_current` if `windowEnd === null`), formatted with `toLocaleString()`.
+- Counts line via `com_admin_prompts_usage_counts`.
+- List of conversations — each a link `<a href="/c/:conversationId" target="_blank">{conversationId}</a>` with count and `lastMessageAt`.
+- Empty state if `messageCount === 0`: "No messages during this window."
+
+- [ ] **Step 9: Commit**
+
+```bash
+cat > /tmp/task28-commit.txt <<'EOF'
+feat(prompt-ui): usage timeline per version (B1)
+
+For each version in PromptHistory, show the window during which it was
+live plus the conversations that ran against it. Zero schema change on
+messages — derive usage from publishedAt timestamps (version V active
+from V.publishedAt to next(V).publishedAt). Accurate for >99% of
+traffic; straddle-the-publish-moment edge cases are attributed by
+createdAt side.
+
+- getVersionUsage service fn + tests
+- GET /api/admin/prompts/:agent/sections/:key/versions/:versionId/usage
+- data-provider + react-query hook + i18n keys
+- PromptHistory.tsx disclosure panel with deep links to conversations
+EOF
+echo 'Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>' >> /tmp/task28-commit.txt
+
+cd /Users/amir/Development/anubanu/parlibot/LibreChat
+git add packages/api/src/admin/prompts/PromptsService.ts packages/api/src/admin/prompts/PromptsService.spec.ts packages/api/src/admin/prompts/index.ts api/server/routes/admin/prompts.js api/server/controllers/admin/promptsController.js packages/data-provider/src/ client/src/data-provider/AdminPrompts/queries.ts client/src/components/Admin/Prompts/PromptHistory.tsx client/src/locales/en/translation.json
+git commit -F /tmp/task28-commit.txt
+```
+
+---
+
+## Task 29: Final push + PR
 
 - [ ] **Step 1: Full test suite per workspace**
 
