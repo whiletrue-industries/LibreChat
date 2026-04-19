@@ -73,6 +73,7 @@ export enum QueryKeys {
   adminPromptsSections = 'adminPromptsSections',
   adminPromptsVersions = 'adminPromptsVersions',
   adminPromptTestQuestions = 'adminPromptTestQuestions',
+  adminPromptVersionUsage = 'adminPromptVersionUsage',
 }
 
 // Dynamic query keys that require parameters

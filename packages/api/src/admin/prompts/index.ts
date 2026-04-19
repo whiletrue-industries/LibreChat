@@ -8,6 +8,7 @@ export {
   saveDraft,
   publish,
   restore,
+  getVersionUsage,
   ConcurrencyError,
 } from './PromptsService';
 export type {
@@ -19,6 +20,9 @@ export type {
   SaveDraftInput,
   PublishInput,
   RestoreInput,
+  GetVersionUsageInput,
+  VersionUsage,
+  VersionUsageConversation,
 } from './PromptsService';
 export { spawnOrReuseShadow, clearShadowCache } from './shadowAgent';
 export type { AgentsClient, AgentSnapshot, SpawnShadowInput } from './shadowAgent';

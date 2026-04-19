@@ -15,5 +15,6 @@ router.post('/:agent/sections/:key/preview', controller.preview);
 router.post('/:agent/sections/:key/restore', controller.restore);
 router.get('/:agent/test-questions', controller.getTestQuestions);
 router.put('/:agent/test-questions', controller.putTestQuestions);
+router.get('/:agent/sections/:key/versions/:versionId/usage', controller.getUsage);
 
 module.exports = router;

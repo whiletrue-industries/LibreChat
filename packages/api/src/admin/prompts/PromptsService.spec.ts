@@ -1,13 +1,14 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { agentPromptSchema } from '@librechat/data-schemas';
-import type { IAgentPrompt, AgentType } from '@librechat/data-schemas';
+import { agentPromptSchema, messageSchema } from '@librechat/data-schemas';
+import type { IAgentPrompt, IMessage, AgentType } from '@librechat/data-schemas';
 import {
   getActiveSections,
   saveDraft,
   getSectionHistory,
   publish,
   restore,
+  getVersionUsage,
   ConcurrencyError,
 } from './PromptsService';
 
@@ -241,5 +242,124 @@ describe('PromptsService.publish + restore', () => {
     });
     expect(active?.body).toBe('A1');
     expect(active?.changeNote).toMatch(/Restored from version/i);
+  });
+});
+
+describe('PromptsService.getVersionUsage', () => {
+  let mem: MongoMemoryServer;
+  let AgentPrompt: mongoose.Model<IAgentPrompt>;
+  let Message: mongoose.Model<IMessage>;
+
+  beforeAll(async () => {
+    mem = await MongoMemoryServer.create();
+    await mongoose.connect(mem.getUri());
+    AgentPrompt = mongoose.model<IAgentPrompt>('AgentPromptUsage', agentPromptSchema);
+    Message = mongoose.model<IMessage>('MessageUsage', messageSchema);
+  });
+
+  afterAll(async () => {
+    await mongoose.disconnect();
+    await mem.stop();
+  });
+
+  beforeEach(async () => {
+    await AgentPrompt.deleteMany({});
+    await Message.deleteMany({});
+  });
+
+  async function seedVersions() {
+    const v1 = await AgentPrompt.create({
+      agentType: 'unified',
+      sectionKey: 'preamble',
+      body: 'v1',
+      ordinal: 0,
+      active: false,
+      isDraft: false,
+      publishedAt: new Date('2026-04-01'),
+    });
+    const v2 = await AgentPrompt.create({
+      agentType: 'unified',
+      sectionKey: 'preamble',
+      body: 'v2',
+      ordinal: 0,
+      active: true,
+      isDraft: false,
+      publishedAt: new Date('2026-04-10'),
+    });
+    return { v1, v2 };
+  }
+
+  it('returns window bounds, counts, and top conversations for a past version', async () => {
+    const { v1 } = await seedVersions();
+    await Message.create([
+      { conversationId: 'c1', messageId: 'm1', user: 'u1', isCreatedByUser: false, endpoint: 'agents', model: 'agent_live', createdAt: new Date('2026-04-02') },
+      { conversationId: 'c1', messageId: 'm2', user: 'u1', isCreatedByUser: false, endpoint: 'agents', model: 'agent_live', createdAt: new Date('2026-04-03') },
+      { conversationId: 'c2', messageId: 'm3', user: 'u1', isCreatedByUser: false, endpoint: 'agents', model: 'agent_live', createdAt: new Date('2026-04-04') },
+      { conversationId: 'c1', messageId: 'm4', user: 'u1', isCreatedByUser: true, endpoint: 'agents', model: 'agent_live', createdAt: new Date('2026-04-02') },
+      { conversationId: 'c3', messageId: 'm5', user: 'u1', isCreatedByUser: false, endpoint: 'agents', model: 'agent_live', createdAt: new Date('2026-04-11') },
+    ]);
+    const out = await getVersionUsage({
+      AgentPrompt,
+      Message,
+      agentType: 'unified',
+      sectionKey: 'preamble',
+      versionId: new mongoose.Types.ObjectId(String(v1._id)),
+      liveAgentId: 'agent_live',
+      limit: 50,
+    });
+    expect(out.windowStart).toEqual(new Date('2026-04-01'));
+    expect(out.windowEnd).toEqual(new Date('2026-04-10'));
+    expect(out.messageCount).toBe(3);
+    expect(out.conversationCount).toBe(2);
+    expect(out.conversations.map((c) => c.conversationId).sort()).toEqual(['c1', 'c2']);
+    const c1 = out.conversations.find((c) => c.conversationId === 'c1');
+    expect(c1?.messageCount).toBe(2);
+  });
+
+  it('returns open-ended window for the current active version', async () => {
+    const { v2 } = await seedVersions();
+    await Message.create({
+      conversationId: 'c3',
+      messageId: 'm1',
+      user: 'u1',
+      isCreatedByUser: false,
+      endpoint: 'agents',
+      model: 'agent_live',
+      createdAt: new Date('2026-04-11'),
+    });
+    const out = await getVersionUsage({
+      AgentPrompt,
+      Message,
+      agentType: 'unified',
+      sectionKey: 'preamble',
+      versionId: new mongoose.Types.ObjectId(String(v2._id)),
+      liveAgentId: 'agent_live',
+      limit: 50,
+    });
+    expect(out.windowEnd).toBeNull();
+    expect(out.messageCount).toBe(1);
+  });
+
+  it('throws when versionId is not for this (agent, section)', async () => {
+    const stray = await AgentPrompt.create({
+      agentType: 'unified',
+      sectionKey: 'different_key',
+      body: 'x',
+      ordinal: 0,
+      active: true,
+      isDraft: false,
+      publishedAt: new Date('2026-04-01'),
+    });
+    await expect(
+      getVersionUsage({
+        AgentPrompt,
+        Message,
+        agentType: 'unified',
+        sectionKey: 'preamble',
+        versionId: new mongoose.Types.ObjectId(String(stray._id)),
+        liveAgentId: 'agent_live',
+        limit: 50,
+      }),
+    ).rejects.toThrow(/does not match/i);
   });
 });

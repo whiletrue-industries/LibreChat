@@ -1176,3 +1176,14 @@ export function putAdminPromptTestQuestions(
 ): Promise<{ ok: true }> {
   return request.put(endpoints.adminPromptsTestQuestions(agentType), input);
 }
+
+export function getAdminPromptVersionUsage(
+  agentType: string,
+  sectionKey: string,
+  versionId: string,
+  limit = 50,
+): Promise<q.AdminPromptUsage> {
+  return request.get(
+    endpoints.adminPromptsVersionUsage(agentType, sectionKey, versionId, limit),
+  );
+}

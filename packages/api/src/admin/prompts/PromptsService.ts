@@ -1,5 +1,5 @@
 import type { Model, Types } from 'mongoose';
-import type { IAgentPrompt } from '@librechat/data-schemas';
+import type { IAgentPrompt, IMessage } from '@librechat/data-schemas';
 import { assemble } from './assemble';
 
 export type AgentType = 'unified' | 'takanon' | 'budgetkey';
@@ -201,4 +201,103 @@ export async function restore(input: RestoreInput): Promise<AgentPromptRow> {
     changeNote: `Restored from version ${String(source._id).slice(-6)}`,
     createdBy: input.createdBy,
   });
+}
+
+export interface GetVersionUsageInput extends BaseDeps {
+  Message: Model<IMessage>;
+  agentType: AgentType;
+  sectionKey: string;
+  versionId: Types.ObjectId;
+  liveAgentId: string;
+  limit: number;
+}
+
+export interface VersionUsageConversation {
+  conversationId: string;
+  messageCount: number;
+  lastMessageAt: Date;
+}
+
+export interface VersionUsage {
+  windowStart: Date;
+  windowEnd: Date | null;
+  messageCount: number;
+  conversationCount: number;
+  conversations: VersionUsageConversation[];
+}
+
+interface VersionUsageFacetResult {
+  totals: Array<{ messageCount: number }>;
+  conversations: Array<{ _id: string; messageCount: number; lastMessageAt: Date }>;
+}
+
+export async function getVersionUsage(input: GetVersionUsageInput): Promise<VersionUsage> {
+  const target = await input.AgentPrompt
+    .findById(input.versionId)
+    .lean<AgentPromptRow | null>()
+    .exec();
+  if (!target) {
+    throw new Error(`version ${String(input.versionId)} not found`);
+  }
+  if (target.agentType !== input.agentType || target.sectionKey !== input.sectionKey) {
+    throw new Error('version does not match agentType/sectionKey');
+  }
+  const windowStart = target.publishedAt ?? target.createdAt;
+  const next = await input.AgentPrompt
+    .findOne({
+      agentType: input.agentType,
+      sectionKey: input.sectionKey,
+      isDraft: false,
+      publishedAt: { $gt: windowStart },
+    })
+    .sort({ publishedAt: 1 })
+    .lean<AgentPromptRow | null>()
+    .exec();
+  const windowEnd: Date | null = next?.publishedAt ?? null;
+
+  const createdAtFilter: Record<string, Date> = { $gte: windowStart };
+  if (windowEnd) {
+    createdAtFilter.$lt = windowEnd;
+  }
+  const match = {
+    isCreatedByUser: false,
+    endpoint: 'agents',
+    model: input.liveAgentId,
+    createdAt: createdAtFilter,
+  };
+
+  const facetResults = await input.Message.aggregate<VersionUsageFacetResult>([
+    { $match: match },
+    {
+      $facet: {
+        totals: [{ $count: 'messageCount' }],
+        conversations: [
+          {
+            $group: {
+              _id: '$conversationId',
+              messageCount: { $sum: 1 },
+              lastMessageAt: { $max: '$createdAt' },
+            },
+          },
+          { $sort: { lastMessageAt: -1 } },
+          { $limit: input.limit },
+        ],
+      },
+    },
+  ]);
+
+  const agg = facetResults[0] ?? { totals: [], conversations: [] };
+  const messageCount = agg.totals[0]?.messageCount ?? 0;
+  const conversations: VersionUsageConversation[] = agg.conversations.map((c) => ({
+    conversationId: c._id,
+    messageCount: c.messageCount,
+    lastMessageAt: c.lastMessageAt,
+  }));
+  return {
+    windowStart,
+    windowEnd,
+    messageCount,
+    conversationCount: conversations.length,
+    conversations,
+  };
 }

@@ -479,3 +479,11 @@ export const adminPromptsRestore = (agentType: string, sectionKey: string): stri
 
 export const adminPromptsTestQuestions = (agentType: string): string =>
   `${BASE_URL}/api/admin/prompts/${encodeURIComponent(agentType)}/test-questions`;
+
+export const adminPromptsVersionUsage = (
+  agentType: string,
+  sectionKey: string,
+  versionId: string,
+  limit = 50,
+): string =>
+  `${BASE_URL}/api/admin/prompts/${encodeURIComponent(agentType)}/sections/${encodeURIComponent(sectionKey)}/versions/${encodeURIComponent(versionId)}/usage?limit=${limit}`;

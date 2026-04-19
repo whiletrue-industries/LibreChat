@@ -15,6 +15,7 @@ import type {
   AdminPromptRestoreResponse,
   AdminPromptTestQuestionsResponse,
   AdminPromptTestQuestionPutInput,
+  AdminPromptUsage,
 } from 'librechat-data-provider';
 
 export const useAdminPromptAgents = () =>
@@ -143,3 +144,19 @@ export const usePutAdminPromptTestQuestions = () => {
     },
   );
 };
+
+export const useAdminPromptVersionUsage = (
+  agentType: string,
+  sectionKey: string,
+  versionId: string | null,
+) =>
+  useQuery<AdminPromptUsage>(
+    [QueryKeys.adminPromptVersionUsage, agentType, sectionKey, versionId],
+    () =>
+      dataService.getAdminPromptVersionUsage(
+        agentType,
+        sectionKey,
+        versionId as string,
+      ),
+    { enabled: Boolean(versionId), staleTime: 5 * 60 * 1000 },
+  );

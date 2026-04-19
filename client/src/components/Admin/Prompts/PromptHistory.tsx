@@ -2,6 +2,7 @@ import { Fragment, useState } from 'react';
 import type { AdminPromptVersion } from 'librechat-data-provider';
 import {
   useAdminPromptVersions,
+  useAdminPromptVersionUsage,
   useRestoreAdminPrompt,
 } from '~/data-provider/AdminPrompts/queries';
 import { useLocalize } from '~/hooks';
@@ -22,6 +23,8 @@ export default function PromptHistory({ agentType, sectionKey }: PromptHistoryPr
   const versions = useAdminPromptVersions(agentType, sectionKey);
   const restore = useRestoreAdminPrompt();
   const [diffFor, setDiffFor] = useState<string | null>(null);
+  const [usageFor, setUsageFor] = useState<string | null>(null);
+  const usage = useAdminPromptVersionUsage(agentType, sectionKey, usageFor);
   const [confirmFor, setConfirmFor] = useState<AdminPromptVersion | null>(null);
 
   if (versions.isLoading || !versions.data) return null;
@@ -78,10 +81,23 @@ export default function PromptHistory({ agentType, sectionKey }: PromptHistoryPr
                   <td className="py-2 text-end">
                     <button
                       type="button"
-                      onClick={() => setDiffFor(diffFor === v._id ? null : v._id)}
+                      onClick={() => {
+                        setDiffFor(diffFor === v._id ? null : v._id);
+                        setUsageFor(null);
+                      }}
                       className="mr-2 text-xs underline"
                     >
                       {localize('com_admin_prompts_diff_with_current')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUsageFor(usageFor === v._id ? null : v._id);
+                        setDiffFor(null);
+                      }}
+                      className="mr-2 text-xs underline"
+                    >
+                      {localize('com_admin_prompts_usage')}
                     </button>
                     <button
                       type="button"
@@ -97,6 +113,55 @@ export default function PromptHistory({ agentType, sectionKey }: PromptHistoryPr
                   <tr>
                     <td colSpan={5} className="p-2">
                       <PromptDiff current={active.body} draft={v.body} readOnly height="30vh" />
+                    </td>
+                  </tr>
+                )}
+                {usageFor === v._id && usage.data && (
+                  <tr key={`${v._id}-usage`}>
+                    <td colSpan={5} className="bg-surface-primary-alt p-2 text-xs">
+                      {usage.data.windowEnd === null ? (
+                        <div>
+                          {localize('com_admin_prompts_usage_window_current', {
+                            start: new Date(usage.data.windowStart).toLocaleString(),
+                          })}
+                        </div>
+                      ) : (
+                        <div>
+                          {localize('com_admin_prompts_usage_window', {
+                            start: new Date(usage.data.windowStart).toLocaleString(),
+                            end: new Date(usage.data.windowEnd).toLocaleString(),
+                          })}
+                        </div>
+                      )}
+                      <div className="mt-1">
+                        {localize('com_admin_prompts_usage_counts', {
+                          messageCount: usage.data.messageCount,
+                          conversationCount: usage.data.conversationCount,
+                        })}
+                      </div>
+                      {usage.data.messageCount === 0 ? (
+                        <div className="mt-2 text-text-secondary">
+                          {localize('com_admin_prompts_usage_empty')}
+                        </div>
+                      ) : (
+                        <ul className="mt-2 space-y-1">
+                          {usage.data.conversations.map((c) => (
+                            <li key={c.conversationId} className="flex justify-between">
+                              <a
+                                href={`/c/${c.conversationId}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="underline"
+                              >
+                                {c.conversationId.slice(-8)}
+                              </a>
+                              <span className="text-text-secondary">
+                                {c.messageCount} · {new Date(c.lastMessageAt).toLocaleString()}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                     </td>
                   </tr>
                 )}

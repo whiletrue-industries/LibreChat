@@ -201,6 +201,27 @@ async function putTestQuestions(req, res) {
   }
 }
 
+async function getUsage(req, res) {
+  try {
+    const { AgentPrompt: agentPrompt, Message } = require('~/db/models');
+    const mongoose = require('mongoose');
+    const usage = await AdminPrompts.getVersionUsage({
+      AgentPrompt: agentPrompt,
+      Message,
+      agentType: req.params.agent,
+      sectionKey: req.params.key,
+      versionId: new mongoose.Types.ObjectId(req.params.versionId),
+      liveAgentId: (req.app.locals.liveAgentIds || {})[req.params.agent] || '',
+      limit: Number(req.query.limit) || 50,
+    });
+    res.status(200).json(usage);
+  } catch (err) {
+    logger.error('[admin/prompts] getUsage failed', err);
+    const code = /does not match|not found/i.test(err.message) ? 404 : 500;
+    res.status(code).json({ error: err.message });
+  }
+}
+
 module.exports = {
   listAgents,
   listSections,
@@ -211,4 +232,5 @@ module.exports = {
   restore,
   getTestQuestions,
   putTestQuestions,
+  getUsage,
 };

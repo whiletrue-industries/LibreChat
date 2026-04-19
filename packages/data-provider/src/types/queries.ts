@@ -419,3 +419,17 @@ export interface AdminPromptTestQuestionsResponse {
 export interface AdminPromptTestQuestionPutInput {
   questions: Array<{ text: string; enabled?: boolean }>;
 }
+
+export interface AdminPromptUsageConversation {
+  conversationId: string;
+  messageCount: number;
+  lastMessageAt: string;
+}
+
+export interface AdminPromptUsage {
+  windowStart: string;
+  windowEnd: string | null;
+  messageCount: number;
+  conversationCount: number;
+  conversations: AdminPromptUsageConversation[];
+}
