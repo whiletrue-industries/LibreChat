@@ -5,8 +5,8 @@ const path = require('path');
 const mongoose = require('mongoose');
 const { messageSchema } = require('@librechat/data-schemas');
 
-const apiDist = path.join(__dirname, '..', 'packages', 'api', 'dist', 'index.js');
-const { run, buildFakeLlm, buildOpenAiLlm } = require(apiDist);
+const { AdminFeedback } = require(path.join(__dirname, '..', 'packages', 'api', 'dist', 'index.js'));
+const { run, buildFakeLlm, buildOpenAiLlm } = AdminFeedback;
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));

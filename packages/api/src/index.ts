@@ -48,12 +48,7 @@ export * from './stream';
 /* Diagnostics */
 export { memoryDiagnostics } from './utils/memory';
 /* Admin / Feedback */
-export * from './admin/feedback/runner';
-export * from './admin/feedback/fakeLlm';
-export * from './admin/feedback/llmAdapter';
-export * from './admin/feedback/proposeClusters';
-export * from './admin/feedback/discoverRunner';
-export * from './admin/feedback/FeedbackAnalytics';
+export * as AdminFeedback from './admin/feedback';
 /* types */
 export type * from './mcp/types';
 export type * from './flow/types';
