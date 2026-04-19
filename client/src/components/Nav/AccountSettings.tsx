@@ -91,7 +91,7 @@ function AccountSettings() {
         )}
         {isAdmin && (
           <Menu.MenuItem
-            onClick={() => navigate('/d/prompts')}
+            onClick={() => navigate('/d/agent-prompts')}
             className="select-item text-sm"
           >
             <FileText className="icon-md" aria-hidden="true" />

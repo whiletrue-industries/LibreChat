@@ -38,7 +38,7 @@ export default function PromptsDashboard() {
           >
             <button
               type="button"
-              onClick={() => navigate(`/d/prompts/${a.agentType}`)}
+              onClick={() => navigate(`/d/agent-prompts/${a.agentType}`)}
               className="w-full text-start"
             >
               <div className="text-sm font-medium">

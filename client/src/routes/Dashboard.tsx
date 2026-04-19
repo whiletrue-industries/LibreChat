@@ -79,7 +79,7 @@ const dashboardRoutes = {
       element: <FeedbackDashboard />,
     },
     {
-      path: 'prompts',
+      path: 'agent-prompts',
       element: <PromptsDashboard />,
     },
     {
