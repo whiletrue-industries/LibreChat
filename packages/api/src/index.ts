@@ -49,6 +49,8 @@ export * from './stream';
 export { memoryDiagnostics } from './utils/memory';
 /* Admin / Feedback */
 export * as AdminFeedback from './admin/feedback';
+/* Admin / Prompts */
+export * as AdminPrompts from './admin/prompts';
 /* types */
 export type * from './mcp/types';
 export type * from './flow/types';
