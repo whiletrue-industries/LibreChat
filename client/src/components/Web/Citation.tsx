@@ -1,11 +1,12 @@
 import { memo, useState, useContext, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useToastContext } from '@librechat/client';
 import type { CitationProps } from './types';
 import { SourceHovercard, FaviconImage, getCleanDomain } from '~/components/Web/SourceHovercard';
 import { CitationContext, useCitation, useCompositeCitations } from './Context';
 import { useFileDownload } from '~/data-provider';
-import { useLocalize } from '~/hooks';
+import { useIsRTL, useLocalize } from '~/hooks';
 import store from '~/store';
 
 interface CompositeCitationProps {
@@ -17,6 +18,7 @@ interface CompositeCitationProps {
 
 export function CompositeCitation(props: CompositeCitationProps) {
   const localize = useLocalize();
+  const isRTL = useIsRTL();
   const { citations, citationId } = props.node?.properties ?? ({} as CitationProps);
   const { setHoveredCitationId } = useContext(CitationContext);
   const [currentPage, setCurrentPage] = useState(0);
@@ -70,18 +72,28 @@ export function CompositeCitation(props: CompositeCitationProps) {
             <button
               onClick={handlePrevPage}
               disabled={currentPage === 0}
+              aria-label={localize('com_ui_prev')}
               style={{ opacity: currentPage === 0 ? 0.5 : 1 }}
               className="flex cursor-pointer items-center justify-center border-none bg-transparent p-0 text-base"
             >
-              ←
+              {isRTL ? (
+                <ChevronRight className="icon-sm" aria-hidden="true" />
+              ) : (
+                <ChevronLeft className="icon-sm" aria-hidden="true" />
+              )}
             </button>
             <button
               onClick={handleNextPage}
               disabled={currentPage === totalPages - 1}
+              aria-label={localize('com_ui_next')}
               style={{ opacity: currentPage === totalPages - 1 ? 0.5 : 1 }}
               className="flex cursor-pointer items-center justify-center border-none bg-transparent p-0 text-base"
             >
-              →
+              {isRTL ? (
+                <ChevronLeft className="icon-sm" aria-hidden="true" />
+              ) : (
+                <ChevronRight className="icon-sm" aria-hidden="true" />
+              )}
             </button>
           </span>
           <span className="text-xs text-text-tertiary">

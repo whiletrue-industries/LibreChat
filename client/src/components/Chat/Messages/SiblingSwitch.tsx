@@ -1,5 +1,6 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { TMessageProps } from '~/common';
+import { useIsRTL, useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 type TSiblingSwitchProps = Pick<TMessageProps, 'siblingIdx' | 'siblingCount' | 'setSiblingIdx'>;
@@ -9,6 +10,9 @@ export default function SiblingSwitch({
   siblingCount,
   setSiblingIdx,
 }: TSiblingSwitchProps) {
+  const localize = useLocalize();
+  const isRTL = useIsRTL();
+
   if (siblingIdx === undefined) {
     return null;
   } else if (siblingCount === undefined) {
@@ -30,20 +34,23 @@ export default function SiblingSwitch({
     'focus-visible:ring-2 focus-visible:ring-black dark:focus-visible:ring-white focus-visible:outline-none',
   );
 
+  const PrevIcon = isRTL ? ChevronRight : ChevronLeft;
+  const NextIcon = isRTL ? ChevronLeft : ChevronRight;
+
   return siblingCount > 1 ? (
     <nav
       className="visible flex items-center justify-center gap-2 self-center pt-0 text-xs"
-      aria-label="Sibling message navigation"
+      aria-label={localize('com_ui_sibling_message_nav')}
     >
       <button
         className={buttonStyle}
         type="button"
         onClick={previous}
         disabled={siblingIdx == 0}
-        aria-label="Previous sibling message"
+        aria-label={localize('com_ui_sibling_message_prev')}
         aria-disabled={siblingIdx == 0}
       >
-        <ChevronLeft size="19" aria-hidden="true" />
+        <PrevIcon size="19" aria-hidden="true" />
       </button>
       <span
         className="flex-shrink-0 flex-grow tabular-nums"
@@ -58,10 +65,10 @@ export default function SiblingSwitch({
         type="button"
         onClick={next}
         disabled={siblingIdx == siblingCount - 1}
-        aria-label="Next sibling message"
+        aria-label={localize('com_ui_sibling_message_next')}
         aria-disabled={siblingIdx == siblingCount - 1}
       >
-        <ChevronRight size="19" aria-hidden="true" />
+        <NextIcon size="19" aria-hidden="true" />
       </button>
     </nav>
   ) : null;

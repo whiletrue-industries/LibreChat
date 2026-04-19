@@ -2098,7 +2098,7 @@ html {
     Noto Sans,
     sans-serif;
   line-height: normal;
-  margin-left: 0.25rem;
+  margin-inline-start: 0.25rem;
   vertical-align: middle;
   font-size: 0.5rem;
 }
@@ -2118,7 +2118,7 @@ html {
       Noto Sans,
       sans-serif;
     line-height: normal;
-    margin-left: 0.25rem;
+    margin-inline-start: 0.25rem;
     vertical-align: middle;
     font-size: 0.5rem;
     display: inline-block;
@@ -2143,7 +2143,7 @@ html {
       Noto Sans,
       sans-serif;
     line-height: normal;
-    margin-left: 0.25rem;
+    margin-inline-start: 0.25rem;
     vertical-align: middle;
     font-size: 0.5rem;
     display: inline-block;
@@ -2623,7 +2623,7 @@ html {
   scale: 0.95;
   translate: 0 -0.5rem;
   margin-top: 4px;
-  margin-right: -2px;
+  margin-inline-end: -2px;
 }
 
 .popover-animate {
