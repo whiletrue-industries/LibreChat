@@ -1085,3 +1085,31 @@ export interface ActiveJobsResponse {
 export const getActiveJobs = (): Promise<ActiveJobsResponse> => {
   return request.get(endpoints.activeJobs());
 };
+
+/* Admin Feedback */
+export function getAdminFeedbackOverview(
+  params: q.AdminFeedbackOverviewFilter,
+): Promise<q.AdminFeedbackOverview> {
+  return request.get(endpoints.adminFeedbackOverview(params));
+}
+
+export function getAdminFeedbackMessages(
+  params: q.AdminFeedbackDrillDownFilter,
+): Promise<q.AdminFeedbackDrillDownResponse> {
+  return request.get(endpoints.adminFeedbackMessages(params));
+}
+
+export function getAdminFeedbackPending(): Promise<q.AdminFeedbackPendingResponse> {
+  return request.get(endpoints.adminFeedbackPendingList());
+}
+
+export function approveAdminFeedbackPending(
+  id: string,
+  rewrite = true,
+): Promise<{ ok: true }> {
+  return request.post(endpoints.adminFeedbackPendingApprove(id, rewrite), {});
+}
+
+export function rejectAdminFeedbackPending(id: string): Promise<{ ok: true }> {
+  return request.post(endpoints.adminFeedbackPendingReject(id), {});
+}

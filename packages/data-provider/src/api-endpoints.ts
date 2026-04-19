@@ -438,3 +438,19 @@ export const getAllEffectivePermissions = (resourceType: ResourceType) =>
 // SharePoint Graph API Token
 export const graphToken = (scopes: string) =>
   `${BASE_URL}/api/auth/graph-token?scopes=${encodeURIComponent(scopes)}`;
+
+/* Admin Feedback */
+export const adminFeedbackOverview = (params: q.AdminFeedbackOverviewFilter): string =>
+  `${BASE_URL}/api/admin/feedback/overview${buildQuery(params as Record<string, unknown>)}`;
+
+export const adminFeedbackMessages = (params: q.AdminFeedbackDrillDownFilter): string =>
+  `${BASE_URL}/api/admin/feedback/messages${buildQuery(params as Record<string, unknown>)}`;
+
+export const adminFeedbackPendingList = (): string =>
+  `${BASE_URL}/api/admin/feedback/pending-topics`;
+
+export const adminFeedbackPendingApprove = (id: string, rewrite = true): string =>
+  `${BASE_URL}/api/admin/feedback/pending-topics/${encodeURIComponent(id)}/approve?rewrite=${rewrite}`;
+
+export const adminFeedbackPendingReject = (id: string): string =>
+  `${BASE_URL}/api/admin/feedback/pending-topics/${encodeURIComponent(id)}/reject`;

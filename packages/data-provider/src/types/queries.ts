@@ -206,3 +206,92 @@ export type GraphTokenResponse = {
   expires_in: number;
   scope: string;
 };
+
+/* --- Admin Feedback --- */
+export interface AdminFeedbackOverviewFilter {
+  since?: string;
+  until?: string;
+  endpoint?: string;
+  topic?: string;
+  tag?: string;
+}
+
+export interface AdminFeedbackKpis {
+  total: number;
+  withFeedback: number;
+  feedbackRate: number | null;
+  thumbsUp: number;
+  thumbsDown: number;
+  positivePct: number | null;
+}
+
+export interface AdminFeedbackTopicRow {
+  topic: string;
+  total: number;
+  withFeedback: number;
+  positivePct: number | null;
+  lastThumbsDownAt: string | null;
+}
+
+export interface AdminFeedbackToolRow {
+  toolName: string;
+  total: number;
+  thumbsDown: number;
+}
+
+export interface AdminFeedbackTimePoint {
+  date: string;
+  total: number;
+  withFeedback: number;
+  up: number;
+  down: number;
+}
+
+export interface AdminFeedbackOverview {
+  range: { since: string | null; until: string | null };
+  kpis: AdminFeedbackKpis;
+  timeSeries: AdminFeedbackTimePoint[];
+  byTopic: AdminFeedbackTopicRow[];
+  byTool: AdminFeedbackToolRow[];
+  pendingTopicsCount: number;
+}
+
+export interface AdminFeedbackDrillDownFilter {
+  topic?: string;
+  rating?: 'thumbsUp' | 'thumbsDown';
+  pageSize?: number;
+  cursor?: string;
+}
+
+export interface AdminFeedbackDrillDownMessage {
+  messageId: string;
+  conversationId: string;
+  text?: string;
+  createdAt?: string;
+  feedback?: {
+    rating: 'thumbsUp' | 'thumbsDown';
+    tag?: import('../feedback').TFeedbackTag;
+    text?: string;
+    topic?: string;
+  };
+}
+
+export interface AdminFeedbackDrillDownResponse {
+  messages: AdminFeedbackDrillDownMessage[];
+  nextCursor: string | null;
+}
+
+export interface AdminFeedbackPending {
+  _id: string;
+  proposedKey: string;
+  labelHe: string;
+  labelEn: string;
+  rawLabels: string[];
+  exampleMessageIds: string[];
+  status: 'pending' | 'rejected';
+  proposedAt: string;
+}
+
+export interface AdminFeedbackPendingResponse {
+  pending: AdminFeedbackPending[];
+}
