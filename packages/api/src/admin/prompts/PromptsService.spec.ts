@@ -1,8 +1,15 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { agentPromptSchema } from '@librechat/data-schemas';
-import type { IAgentPrompt } from '@librechat/data-schemas';
-import { getActiveSections, saveDraft, getSectionHistory } from './PromptsService';
+import type { IAgentPrompt, AgentType } from '@librechat/data-schemas';
+import {
+  getActiveSections,
+  saveDraft,
+  getSectionHistory,
+  publish,
+  restore,
+  ConcurrencyError,
+} from './PromptsService';
 
 describe('PromptsService reads + saveDraft', () => {
   let mem: MongoMemoryServer;
@@ -116,5 +123,123 @@ describe('PromptsService reads + saveDraft', () => {
       sectionKey: 'a',
     });
     expect(hist.map((r) => r.body)).toEqual(['v2', 'v1']);
+  });
+});
+
+describe('PromptsService.publish + restore', () => {
+  let mem: MongoMemoryServer;
+  let AgentPrompt: mongoose.Model<IAgentPrompt>;
+  let patchCalls: Array<{ agentType: string; instructions: string }>;
+  const patchAgent = async (agentType: AgentType, instructions: string) => {
+    patchCalls.push({ agentType, instructions });
+  };
+
+  beforeAll(async () => {
+    mem = await MongoMemoryServer.create();
+    await mongoose.connect(mem.getUri());
+    AgentPrompt = mongoose.model<IAgentPrompt>(
+      'AgentPromptPublishSvc',
+      agentPromptSchema,
+    );
+  });
+
+  afterAll(async () => {
+    await mongoose.disconnect();
+    await mem.stop();
+  });
+
+  beforeEach(async () => {
+    await AgentPrompt.deleteMany({});
+    patchCalls = [];
+  });
+
+  it('flips active, inserts new row, calls patchAgent with assembled body', async () => {
+    const parent = await AgentPrompt.create({
+      agentType: 'unified',
+      sectionKey: 'a',
+      body: 'A1',
+      ordinal: 0,
+      active: true,
+      isDraft: false,
+    });
+    const parentId = new mongoose.Types.ObjectId(String(parent._id));
+    await publish({
+      AgentPrompt,
+      patchAgent,
+      agentType: 'unified',
+      sectionKey: 'a',
+      parentVersionId: parentId,
+      body: 'A2',
+      changeNote: 'tightened',
+      createdBy: new mongoose.Types.ObjectId(),
+    });
+    const rows = await AgentPrompt.find({ agentType: 'unified' }).sort({ createdAt: 1 });
+    expect(rows).toHaveLength(2);
+    expect(rows[0].active).toBe(false);
+    expect(rows[1].active).toBe(true);
+    expect(rows[1].body).toBe('A2');
+    expect(patchCalls).toHaveLength(1);
+    expect(patchCalls[0].instructions).toContain('<!-- SECTION_KEY: a -->');
+    expect(patchCalls[0].instructions).toContain('A2');
+  });
+
+  it('rejects with ConcurrencyError when parentVersionId is stale', async () => {
+    await AgentPrompt.create({
+      agentType: 'unified',
+      sectionKey: 'a',
+      body: 'A1',
+      ordinal: 0,
+      active: true,
+      isDraft: false,
+    });
+    await expect(
+      publish({
+        AgentPrompt,
+        patchAgent,
+        agentType: 'unified',
+        sectionKey: 'a',
+        parentVersionId: new mongoose.Types.ObjectId(),
+        body: 'A2',
+        changeNote: 'x',
+        createdBy: new mongoose.Types.ObjectId(),
+      }),
+    ).rejects.toBeInstanceOf(ConcurrencyError);
+  });
+
+  it('restore creates a new active row with body cloned from a prior version', async () => {
+    const v1 = await AgentPrompt.create({
+      agentType: 'unified',
+      sectionKey: 'a',
+      body: 'A1',
+      ordinal: 0,
+      active: true,
+      isDraft: false,
+    });
+    const v1Id = new mongoose.Types.ObjectId(String(v1._id));
+    await publish({
+      AgentPrompt,
+      patchAgent,
+      agentType: 'unified',
+      sectionKey: 'a',
+      parentVersionId: v1Id,
+      body: 'A2',
+      changeNote: 'x',
+      createdBy: new mongoose.Types.ObjectId(),
+    });
+    await restore({
+      AgentPrompt,
+      patchAgent,
+      agentType: 'unified',
+      sectionKey: 'a',
+      versionId: v1Id,
+      createdBy: new mongoose.Types.ObjectId(),
+    });
+    const active = await AgentPrompt.findOne({
+      agentType: 'unified',
+      sectionKey: 'a',
+      active: true,
+    });
+    expect(active?.body).toBe('A1');
+    expect(active?.changeNote).toMatch(/Restored from version/i);
   });
 });

@@ -1,5 +1,6 @@
 import type { Model, Types } from 'mongoose';
 import type { IAgentPrompt } from '@librechat/data-schemas';
+import { assemble } from './assemble';
 
 export type AgentType = 'unified' | 'takanon' | 'budgetkey';
 
@@ -96,4 +97,108 @@ export async function saveDraft(input: SaveDraftInput): Promise<AgentPromptRow> 
   });
 
   return doc.toObject<AgentPromptRow>();
+}
+
+export class ConcurrencyError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ConcurrencyError';
+  }
+}
+
+export interface PublishInput extends BaseDeps {
+  patchAgent: (agentType: AgentType, instructions: string) => Promise<void>;
+  agentType: AgentType;
+  sectionKey: string;
+  parentVersionId: Types.ObjectId;
+  body: string;
+  changeNote: string;
+  createdBy: Types.ObjectId;
+}
+
+export async function publish(input: PublishInput): Promise<AgentPromptRow> {
+  const current = await input.AgentPrompt
+    .findOne({
+      agentType: input.agentType,
+      sectionKey: input.sectionKey,
+      active: true,
+    })
+    .lean<AgentPromptRow | null>()
+    .exec();
+  if (!current || String(current._id) !== String(input.parentVersionId)) {
+    throw new ConcurrencyError(
+      `stale parent for ${input.agentType}/${input.sectionKey}`,
+    );
+  }
+  await input.AgentPrompt
+    .updateOne({ _id: current._id }, { $set: { active: false } })
+    .exec();
+  const doc = await input.AgentPrompt.create({
+    agentType: input.agentType,
+    sectionKey: input.sectionKey,
+    ordinal: current.ordinal,
+    headerText: current.headerText,
+    body: input.body,
+    active: true,
+    isDraft: false,
+    parentVersionId: current._id,
+    changeNote: input.changeNote,
+    createdBy: input.createdBy,
+    publishedAt: new Date(),
+  });
+  const created = doc.toObject<AgentPromptRow>();
+
+  const sections = await input.AgentPrompt
+    .find({ agentType: input.agentType, active: true })
+    .sort({ ordinal: 1 })
+    .lean<AgentPromptRow[]>()
+    .exec();
+  const assembled = assemble(sections);
+  await input.patchAgent(input.agentType, assembled);
+  return created;
+}
+
+export interface RestoreInput extends BaseDeps {
+  patchAgent: (agentType: AgentType, instructions: string) => Promise<void>;
+  agentType: AgentType;
+  sectionKey: string;
+  versionId: Types.ObjectId;
+  createdBy: Types.ObjectId;
+}
+
+export async function restore(input: RestoreInput): Promise<AgentPromptRow> {
+  const source = await input.AgentPrompt
+    .findById(input.versionId)
+    .lean<AgentPromptRow | null>()
+    .exec();
+  if (!source) {
+    throw new Error(`version ${String(input.versionId)} not found`);
+  }
+  if (
+    source.agentType !== input.agentType ||
+    source.sectionKey !== input.sectionKey
+  ) {
+    throw new Error('version does not match agentType/sectionKey');
+  }
+  const current = await input.AgentPrompt
+    .findOne({
+      agentType: input.agentType,
+      sectionKey: input.sectionKey,
+      active: true,
+    })
+    .lean<AgentPromptRow | null>()
+    .exec();
+  if (!current) {
+    throw new Error('no active section to restore over');
+  }
+  return publish({
+    AgentPrompt: input.AgentPrompt,
+    patchAgent: input.patchAgent,
+    agentType: input.agentType,
+    sectionKey: input.sectionKey,
+    parentVersionId: current._id,
+    body: source.body,
+    changeNote: `Restored from version ${String(source._id).slice(-6)}`,
+    createdBy: input.createdBy,
+  });
 }
