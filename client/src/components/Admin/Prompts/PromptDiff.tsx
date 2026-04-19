@@ -25,7 +25,10 @@ export default function PromptDiff({
           readOnly,
           renderSideBySide: true,
           wordWrap: 'on',
-          fontSize: 13,
+          fontSize: 15,
+          lineHeight: 22,
+          minimap: { enabled: false },
+          scrollBeyondLastLine: false,
         }}
       />
     </div>

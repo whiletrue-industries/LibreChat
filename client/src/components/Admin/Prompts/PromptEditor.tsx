@@ -108,12 +108,20 @@ export default function PromptEditor() {
 
       <div className="rounded border border-border-medium">
         <Editor
-          height="60vh"
+          height="45vh"
           language="markdown"
           theme="vs"
           value={body}
           onChange={(v) => setBody(v ?? '')}
-          options={{ wordWrap: 'on', fontSize: 14, renderWhitespace: 'boundary' }}
+          options={{
+            wordWrap: 'on',
+            fontSize: 16,
+            lineHeight: 24,
+            minimap: { enabled: false },
+            scrollBeyondLastLine: false,
+            padding: { top: 12, bottom: 12 },
+            renderWhitespace: 'boundary',
+          }}
         />
       </div>
 
