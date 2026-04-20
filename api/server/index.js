@@ -44,6 +44,10 @@ const trusted_proxy = Number(TRUST_PROXY) || 1; /* trust first proxy by default 
 
 const app = express();
 
+app.locals.liveAgentIds = {
+  unified: process.env.BOTNIM_AGENT_ID_UNIFIED,
+};
+
 const startServer = async () => {
   if (typeof Bun !== 'undefined') {
     axios.defaults.headers.common['Accept-Encoding'] = 'gzip';
@@ -138,6 +142,7 @@ const startServer = async () => {
   app.use('/api/auth', routes.auth);
   app.use('/api/admin', routes.adminAuth);
   app.use('/api/admin/feedback', require('./routes/admin/feedback'));
+  app.use('/api/admin/prompts', require('./routes/admin/prompts'));
   app.use('/api/actions', routes.actions);
   app.use('/api/keys', routes.keys);
   app.use('/api/api-keys', routes.apiKeys);

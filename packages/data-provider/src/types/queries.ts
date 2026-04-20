@@ -295,3 +295,141 @@ export interface AdminFeedbackPending {
 export interface AdminFeedbackPendingResponse {
   pending: AdminFeedbackPending[];
 }
+
+/* --- Admin Prompts --- */
+export type AdminPromptAgentType = 'unified';
+
+export interface AdminPromptAgentSummary {
+  agentType: AdminPromptAgentType;
+  activeSections: number;
+}
+
+export interface AdminPromptAgentsResponse {
+  agents: AdminPromptAgentSummary[];
+}
+
+export interface AdminPromptSection {
+  _id: string;
+  agentType: AdminPromptAgentType;
+  sectionKey: string;
+  ordinal: number;
+  headerText: string;
+  body: string;
+  active: boolean;
+  isDraft: boolean;
+  parentVersionId?: string;
+  changeNote?: string;
+  createdAt: string;
+  createdBy?: string;
+  publishedAt?: string;
+  hasDraft?: boolean;
+}
+
+export interface AdminPromptSectionsResponse {
+  sections: AdminPromptSection[];
+}
+
+export interface AdminPromptVersion {
+  _id: string;
+  agentType: AdminPromptAgentType;
+  sectionKey: string;
+  ordinal: number;
+  headerText: string;
+  body: string;
+  active: boolean;
+  isDraft: boolean;
+  parentVersionId?: string;
+  changeNote?: string;
+  createdAt: string;
+  createdBy?: string;
+  publishedAt?: string;
+}
+
+export interface AdminPromptVersionsResponse {
+  versions: AdminPromptVersion[];
+}
+
+export interface AdminPromptSaveDraftInput {
+  body: string;
+  changeNote?: string;
+}
+
+export interface AdminPromptSaveDraftResponse {
+  draft: AdminPromptSection;
+}
+
+export interface AdminPromptPublishInput {
+  parentVersionId: string;
+  body: string;
+  changeNote: string;
+}
+
+export interface AdminPromptPublishResponse {
+  active: AdminPromptSection;
+}
+
+export interface AdminPromptPublishConflictResponse {
+  error: 'stale parent';
+  current: AdminPromptSection | null;
+}
+
+export interface AdminPromptPreviewInput {
+  body: string;
+}
+
+export interface AdminPromptPreviewAnswer {
+  answer: string;
+  toolCalls: unknown[];
+}
+
+export interface AdminPromptPreviewQuestionResult {
+  text: string;
+  current: AdminPromptPreviewAnswer;
+  draft: AdminPromptPreviewAnswer;
+  timedOut: boolean;
+}
+
+export interface AdminPromptPreviewResponse {
+  shadowId: string;
+  questions: AdminPromptPreviewQuestionResult[];
+}
+
+export interface AdminPromptRestoreInput {
+  versionId: string;
+}
+
+export interface AdminPromptRestoreResponse {
+  active: AdminPromptSection;
+}
+
+export interface AdminPromptTestQuestion {
+  _id?: string;
+  agentType: AdminPromptAgentType;
+  text: string;
+  ordinal: number;
+  enabled: boolean;
+  createdAt?: string;
+  createdBy?: string;
+}
+
+export interface AdminPromptTestQuestionsResponse {
+  questions: AdminPromptTestQuestion[];
+}
+
+export interface AdminPromptTestQuestionPutInput {
+  questions: Array<{ text: string; enabled?: boolean }>;
+}
+
+export interface AdminPromptUsageConversation {
+  conversationId: string;
+  messageCount: number;
+  lastMessageAt: string;
+}
+
+export interface AdminPromptUsage {
+  windowStart: string;
+  windowEnd: string | null;
+  messageCount: number;
+  conversationCount: number;
+  conversations: AdminPromptUsageConversation[];
+}

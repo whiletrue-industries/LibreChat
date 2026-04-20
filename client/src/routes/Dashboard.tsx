@@ -6,6 +6,11 @@ import {
   EmptyPromptPreview,
 } from '~/components/Prompts';
 import { FeedbackDashboard } from '~/components/Admin/Feedback';
+import {
+  PromptsDashboard,
+  PromptEditor,
+  PromptSectionList,
+} from '~/components/Admin/Prompts';
 import DashboardRoute from './Layouts/Dashboard';
 
 const dashboardRoutes = {
@@ -76,6 +81,18 @@ const dashboardRoutes = {
     {
       path: 'feedback',
       element: <FeedbackDashboard />,
+    },
+    {
+      path: 'agent-prompts',
+      element: <PromptsDashboard />,
+    },
+    {
+      path: 'agent-prompts/:agent',
+      element: <PromptSectionList />,
+    },
+    {
+      path: 'agent-prompts/:agent/:key',
+      element: <PromptEditor />,
     },
     {
       path: '*',

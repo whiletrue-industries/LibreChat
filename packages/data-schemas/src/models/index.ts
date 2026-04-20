@@ -29,6 +29,8 @@ import { createAclEntryModel } from './aclEntry';
 import { createGroupModel } from './group';
 import { createFeedbackTopicModel } from './feedbackTopic';
 import { createFeedbackTopicPendingModel } from './feedbackTopicPending';
+import { createAgentPromptModel } from './agentPrompt';
+import { createAgentPromptTestQuestionModel } from './agentPromptTestQuestion';
 
 /**
  * Creates all database models for all collections
@@ -66,5 +68,7 @@ export function createModels(mongoose: typeof import('mongoose')) {
     Group: createGroupModel(mongoose),
     FeedbackTopic: createFeedbackTopicModel(mongoose),
     FeedbackTopicPending: createFeedbackTopicPendingModel(mongoose),
+    AgentPrompt: createAgentPromptModel(mongoose),
+    AgentPromptTestQuestion: createAgentPromptTestQuestionModel(mongoose),
   };
 }

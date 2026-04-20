@@ -69,6 +69,14 @@ module "librechat" {
     # see LibreChat/scripts/seed-botnim-agent.js and the one-time setup
     # documented in BOTNIM_BOOTSTRAP.md.
     ENDPOINTS = "agents"
+
+    # Admin prompt-management UI reads the live agent ID at boot so
+    # publish mutations can update the agent's instructions via the
+    # Agent model. Value is the LibreChat agent-ID returned by
+    # seed-botnim-agent.js (format "agent_XYZ"). Preview still uses
+    # HTTP to create shadow agents; it reuses the admin's own
+    # Authorization header from the incoming request.
+    BOTNIM_AGENT_ID_UNIFIED = var.botnim_agent_id_unified
   }
 
   secret_environment_variables = {
@@ -311,6 +319,36 @@ resource "aws_cloudwatch_event_target" "feedback_discover" {
     containerOverrides = [{
       name    = "api"
       command = ["node", "scripts/discover-feedback-clusters.js"]
+    }]
+  })
+}
+
+resource "aws_cloudwatch_event_rule" "prompts_export" {
+  name                = "librechat-${var.environment}-prompts-export"
+  schedule_expression = "cron(30 2 * * ? *)"
+  description         = "Nightly DB → rebuilding-bots/specs agent.txt export"
+}
+
+resource "aws_cloudwatch_event_target" "prompts_export" {
+  rule     = aws_cloudwatch_event_rule.prompts_export.name
+  arn      = nonsensitive(local.contract.ecs.cluster_arn)
+  role_arn = aws_iam_role.feedback_scheduled.arn
+
+  ecs_target {
+    task_definition_arn = data.aws_ecs_task_definition.librechat.arn
+    launch_type         = "FARGATE"
+
+    network_configuration {
+      subnets          = nonsensitive(local.contract.network.private_subnet_ids)
+      security_groups  = [module.librechat.security_group_id]
+      assign_public_ip = false
+    }
+  }
+
+  input = jsonencode({
+    containerOverrides = [{
+      name    = "api"
+      command = ["node", "scripts/export-prompts-to-git.js"]
     }]
   })
 }

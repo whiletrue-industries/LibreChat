@@ -32,3 +32,8 @@ output "feedback_discover_rule_arn" {
   description = "EventBridge rule ARN for the weekly feedback-discover scheduled task"
   value       = aws_cloudwatch_event_rule.feedback_discover.arn
 }
+
+output "prompts_export_rule_arn" {
+  description = "EventBridge rule ARN for the nightly prompts-export scheduled task"
+  value       = aws_cloudwatch_event_rule.prompts_export.arn
+}

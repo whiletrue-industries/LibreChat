@@ -1113,3 +1113,77 @@ export function approveAdminFeedbackPending(
 export function rejectAdminFeedbackPending(id: string): Promise<{ ok: true }> {
   return request.post(endpoints.adminFeedbackPendingReject(id), {});
 }
+
+/* --- Admin Prompts --- */
+export function getAdminPromptsAgents(): Promise<q.AdminPromptAgentsResponse> {
+  return request.get(endpoints.adminPromptsAgents());
+}
+
+export function getAdminPromptsSections(
+  agentType: string,
+): Promise<q.AdminPromptSectionsResponse> {
+  return request.get(endpoints.adminPromptsSections(agentType));
+}
+
+export function getAdminPromptsVersions(
+  agentType: string,
+  sectionKey: string,
+): Promise<q.AdminPromptVersionsResponse> {
+  return request.get(endpoints.adminPromptsVersions(agentType, sectionKey));
+}
+
+export function saveAdminPromptDraft(
+  agentType: string,
+  sectionKey: string,
+  input: q.AdminPromptSaveDraftInput,
+): Promise<q.AdminPromptSaveDraftResponse> {
+  return request.post(endpoints.adminPromptsSaveDraft(agentType, sectionKey), input);
+}
+
+export function publishAdminPrompt(
+  agentType: string,
+  sectionKey: string,
+  input: q.AdminPromptPublishInput,
+): Promise<q.AdminPromptPublishResponse> {
+  return request.post(endpoints.adminPromptsPublish(agentType, sectionKey), input);
+}
+
+export function previewAdminPrompt(
+  agentType: string,
+  sectionKey: string,
+  input: q.AdminPromptPreviewInput,
+): Promise<q.AdminPromptPreviewResponse> {
+  return request.post(endpoints.adminPromptsPreview(agentType, sectionKey), input);
+}
+
+export function restoreAdminPrompt(
+  agentType: string,
+  sectionKey: string,
+  input: q.AdminPromptRestoreInput,
+): Promise<q.AdminPromptRestoreResponse> {
+  return request.post(endpoints.adminPromptsRestore(agentType, sectionKey), input);
+}
+
+export function getAdminPromptTestQuestions(
+  agentType: string,
+): Promise<q.AdminPromptTestQuestionsResponse> {
+  return request.get(endpoints.adminPromptsTestQuestions(agentType));
+}
+
+export function putAdminPromptTestQuestions(
+  agentType: string,
+  input: q.AdminPromptTestQuestionPutInput,
+): Promise<{ ok: true }> {
+  return request.put(endpoints.adminPromptsTestQuestions(agentType), input);
+}
+
+export function getAdminPromptVersionUsage(
+  agentType: string,
+  sectionKey: string,
+  versionId: string,
+  limit = 50,
+): Promise<q.AdminPromptUsage> {
+  return request.get(
+    endpoints.adminPromptsVersionUsage(agentType, sectionKey, versionId, limit),
+  );
+}

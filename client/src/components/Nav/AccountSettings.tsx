@@ -89,6 +89,15 @@ function AccountSettings() {
             {localize('com_admin_feedback_title')}
           </Menu.MenuItem>
         )}
+        {isAdmin && (
+          <Menu.MenuItem
+            onClick={() => navigate('/d/agent-prompts')}
+            className="select-item text-sm"
+          >
+            <FileText className="icon-md" aria-hidden="true" />
+            {localize('com_admin_prompts_title')}
+          </Menu.MenuItem>
+        )}
         <DropdownMenuSeparator />
         <Menu.MenuItem onClick={() => logout()} className="select-item text-sm">
           <LogOut className="icon-md" aria-hidden="true" />

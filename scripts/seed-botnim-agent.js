@@ -83,12 +83,46 @@ async function listAgents(token) {
   return body.data || [];
 }
 
-function instructionsText() {
+function instructionsFromFile() {
   const fp = path.join(SPECS_DIR, 'unified', 'agent.txt');
   if (!fs.existsSync(fp)) {
     throw new Error(`instructions file not found at ${fp}`);
   }
   return fs.readFileSync(fp, 'utf8');
+}
+
+async function instructionsText() {
+  const mongoUri = process.env.SEED_MONGO_URI || process.env.MONGO_URI;
+  if (!mongoUri) {
+    return instructionsFromFile();
+  }
+  let mongoose;
+  let createModels;
+  let AdminPrompts;
+  try {
+    mongoose = require('mongoose');
+    ({ createModels } = require('@librechat/data-schemas'));
+    ({ AdminPrompts } = require(path.join(
+      __dirname, '..', 'packages', 'api', 'dist', 'index.js',
+    )));
+  } catch (err) {
+    console.warn(`[seed] DB path unavailable (${err.message}); falling back to file`);
+    return instructionsFromFile();
+  }
+  await mongoose.connect(mongoUri);
+  try {
+    const { AgentPrompt } = createModels(mongoose);
+    const sections = await AdminPrompts.getActiveSections({
+      AgentPrompt,
+      agentType: 'unified',
+    });
+    if (sections.length === 0) {
+      return instructionsFromFile();
+    }
+    return AdminPrompts.assemble(sections);
+  } finally {
+    await mongoose.disconnect();
+  }
 }
 
 function loadOpenApiSpecs() {
@@ -127,14 +161,14 @@ function parseSpecServerUrl(rawSpec) {
 }
 
 async function ensureAgent(token, existing) {
+  const instructions = await instructionsText();
   if (existing) {
     console.log(`[seed] reusing existing agent ${existing.id} ("${existing.name}")`);
-    // Update instructions + model to current values in case they changed.
     const updated = await httpJson('PATCH', `${API}/api/agents/${existing.id}`, {
       token,
       body: {
         name: AGENT_NAME,
-        instructions: instructionsText(),
+        instructions,
         model: MODEL,
         provider: 'openAI',
       },
@@ -148,7 +182,7 @@ async function ensureAgent(token, existing) {
       name: AGENT_NAME,
       provider: 'openAI',
       model: MODEL,
-      instructions: instructionsText(),
+      instructions,
       description:
         'עונה על שאלות מתוך תקנון הכנסת וחוקים נלווים וכן על שאלות בנושאי תקציב',
     },

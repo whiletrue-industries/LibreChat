@@ -454,3 +454,36 @@ export const adminFeedbackPendingApprove = (id: string, rewrite = true): string 
 
 export const adminFeedbackPendingReject = (id: string): string =>
   `${BASE_URL}/api/admin/feedback/pending-topics/${encodeURIComponent(id)}/reject`;
+
+/* --- Admin Prompts --- */
+export const adminPromptsAgents = (): string =>
+  `${BASE_URL}/api/admin/prompts/agents`;
+
+export const adminPromptsSections = (agentType: string): string =>
+  `${BASE_URL}/api/admin/prompts/${encodeURIComponent(agentType)}/sections`;
+
+export const adminPromptsVersions = (agentType: string, sectionKey: string): string =>
+  `${BASE_URL}/api/admin/prompts/${encodeURIComponent(agentType)}/sections/${encodeURIComponent(sectionKey)}/versions`;
+
+export const adminPromptsSaveDraft = (agentType: string, sectionKey: string): string =>
+  `${BASE_URL}/api/admin/prompts/${encodeURIComponent(agentType)}/sections/${encodeURIComponent(sectionKey)}/drafts`;
+
+export const adminPromptsPublish = (agentType: string, sectionKey: string): string =>
+  `${BASE_URL}/api/admin/prompts/${encodeURIComponent(agentType)}/sections/${encodeURIComponent(sectionKey)}/publish`;
+
+export const adminPromptsPreview = (agentType: string, sectionKey: string): string =>
+  `${BASE_URL}/api/admin/prompts/${encodeURIComponent(agentType)}/sections/${encodeURIComponent(sectionKey)}/preview`;
+
+export const adminPromptsRestore = (agentType: string, sectionKey: string): string =>
+  `${BASE_URL}/api/admin/prompts/${encodeURIComponent(agentType)}/sections/${encodeURIComponent(sectionKey)}/restore`;
+
+export const adminPromptsTestQuestions = (agentType: string): string =>
+  `${BASE_URL}/api/admin/prompts/${encodeURIComponent(agentType)}/test-questions`;
+
+export const adminPromptsVersionUsage = (
+  agentType: string,
+  sectionKey: string,
+  versionId: string,
+  limit = 50,
+): string =>
+  `${BASE_URL}/api/admin/prompts/${encodeURIComponent(agentType)}/sections/${encodeURIComponent(sectionKey)}/versions/${encodeURIComponent(versionId)}/usage?limit=${limit}`;
