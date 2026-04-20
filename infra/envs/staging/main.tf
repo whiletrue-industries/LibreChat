@@ -304,14 +304,6 @@ module "librechat_meili" {
 # expose it directly; the api container runs the script via containerOverride.
 ################################################################################
 
-data "aws_ecs_task_definition" "librechat" {
-  task_definition = "librechat-${var.environment}-api"
-}
-
-data "aws_iam_role" "librechat_execution" {
-  name = "librechat-${var.environment}-api-execution-role"
-}
-
 data "aws_iam_policy_document" "feedback_scheduled_trust" {
   statement {
     actions = ["sts:AssumeRole"]
@@ -330,13 +322,13 @@ resource "aws_iam_role" "feedback_scheduled" {
 data "aws_iam_policy_document" "feedback_scheduled_run_task" {
   statement {
     actions   = ["ecs:RunTask"]
-    resources = [data.aws_ecs_task_definition.librechat.arn]
+    resources = [module.librechat_api.task_definition_arn]
   }
   statement {
     actions = ["iam:PassRole"]
     resources = [
       module.librechat_api.task_role_arn,
-      data.aws_iam_role.librechat_execution.arn,
+      module.librechat_api.execution_role_arn,
     ]
   }
 }
@@ -357,7 +349,7 @@ resource "aws_cloudwatch_event_target" "feedback_classify" {
   role_arn = aws_iam_role.feedback_scheduled.arn
 
   ecs_target {
-    task_definition_arn = data.aws_ecs_task_definition.librechat.arn
+    task_definition_arn = module.librechat_api.task_definition_arn
     launch_type         = "FARGATE"
 
     network_configuration {
@@ -386,7 +378,7 @@ resource "aws_cloudwatch_event_target" "feedback_discover" {
   role_arn = aws_iam_role.feedback_scheduled.arn
 
   ecs_target {
-    task_definition_arn = data.aws_ecs_task_definition.librechat.arn
+    task_definition_arn = module.librechat_api.task_definition_arn
     launch_type         = "FARGATE"
 
     network_configuration {
@@ -416,7 +408,7 @@ resource "aws_cloudwatch_event_target" "prompts_export" {
   role_arn = aws_iam_role.feedback_scheduled.arn
 
   ecs_target {
-    task_definition_arn = data.aws_ecs_task_definition.librechat.arn
+    task_definition_arn = module.librechat_api.task_definition_arn
     launch_type         = "FARGATE"
 
     network_configuration {
