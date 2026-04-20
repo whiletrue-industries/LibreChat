@@ -114,17 +114,22 @@ module "librechat_api" {
 
     ENDPOINTS = "agents"
 
+    # Create the bootstrap admin user on first boot (empty users collection).
+    # On subsequent boots a user already exists and this is a no-op.
+    CREATE_BOOTSTRAP_USER = "true"
+
     BOTNIM_AGENT_ID_UNIFIED = var.botnim_agent_id_unified
   }
 
   secret_environment_variables = {
-    MONGO_URI          = aws_secretsmanager_secret.mongo_uri.arn
-    OPENAI_API_KEY     = aws_secretsmanager_secret.openai_api_key.arn
-    JWT_SECRET         = aws_secretsmanager_secret.jwt_secret.arn
-    JWT_REFRESH_SECRET = aws_secretsmanager_secret.jwt_refresh_secret.arn
-    CREDS_KEY          = aws_secretsmanager_secret.creds_key.arn
-    CREDS_IV           = aws_secretsmanager_secret.creds_iv.arn
-    MEILI_MASTER_KEY   = aws_secretsmanager_secret.meili_master_key.arn
+    MONGO_URI               = aws_secretsmanager_secret.mongo_uri.arn
+    OPENAI_API_KEY          = aws_secretsmanager_secret.openai_api_key.arn
+    JWT_SECRET              = aws_secretsmanager_secret.jwt_secret.arn
+    JWT_REFRESH_SECRET      = aws_secretsmanager_secret.jwt_refresh_secret.arn
+    CREDS_KEY               = aws_secretsmanager_secret.creds_key.arn
+    CREDS_IV                = aws_secretsmanager_secret.creds_iv.arn
+    MEILI_MASTER_KEY        = aws_secretsmanager_secret.meili_master_key.arn
+    BOOTSTRAP_USER_PASSWORD = aws_secretsmanager_secret.bootstrap_user_password.arn
   }
 
   # The api is stateless now — no EFS, no sidecar_containers, no
