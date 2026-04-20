@@ -9,6 +9,7 @@ describe('spawnOrReuseShadow', () => {
     const live = await client.createAgent({
       name: 'Live',
       model: 'gpt-x',
+      provider: 'openAI',
       instructions: 'live',
     });
     const id = await spawnOrReuseShadow({
@@ -25,6 +26,7 @@ describe('spawnOrReuseShadow', () => {
     const live = await client.createAgent({
       name: 'Live',
       model: 'gpt-x',
+      provider: 'openAI',
       instructions: 'live',
     });
     const a = await spawnOrReuseShadow({
@@ -45,6 +47,7 @@ describe('spawnOrReuseShadow', () => {
     const live = await client.createAgent({
       name: 'Live',
       model: 'gpt-x',
+      provider: 'openAI',
       instructions: 'live',
     });
     const a = await spawnOrReuseShadow({

@@ -63,6 +63,7 @@ function buildRealAgentsClient({ apiBase, authToken }) {
         id: a.id,
         name: a.name,
         model: a.model,
+        provider: a.provider ?? 'openAI',
         instructions: a.instructions ?? '',
         actions: a.actions,
       };

@@ -2,6 +2,7 @@ export interface AgentSnapshot {
   id: string;
   name: string;
   model: string;
+  provider: string;
   instructions: string;
   actions?: Array<{ domain: string; specHash: string }>;
 }
@@ -50,6 +51,7 @@ export async function spawnOrReuseShadow(input: SpawnShadowInput): Promise<strin
   const shadow = await input.client.createAgent({
     name: `${live.name} [shadow-${now}]`,
     model: live.model,
+    provider: live.provider,
     instructions: input.instructions,
     actions: live.actions,
   });

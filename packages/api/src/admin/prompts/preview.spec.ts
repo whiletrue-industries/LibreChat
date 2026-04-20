@@ -10,6 +10,7 @@ describe('runPreview', () => {
     const live = await client.createAgent({
       name: 'Live',
       model: 'gpt-x',
+      provider: 'openAI',
       instructions: 'LIVE',
     });
     const out = await runPreview({
@@ -30,6 +31,7 @@ describe('runPreview', () => {
     const live = await client.createAgent({
       name: 'Live',
       model: 'gpt-x',
+      provider: 'openAI',
       instructions: 'LIVE',
     });
     const slow = { ...client };
