@@ -70,13 +70,16 @@ IMAGE_TAG="$IMAGE_TAG" terragrunt --working-dir "$LC_DIR/infra/live/staging" \
   apply -auto-approve -compact-warnings -no-color >/tmp/deploy-staging-apply.log 2>&1 \
   || { tail -40 /tmp/deploy-staging-apply.log; exit 1; }
 
-step "5/6  ECS update-service (stop-before-start swap)"
+step "5/6  ECS update-service (rolling swap — api is stateless)"
+# api is stateless after the split-task refactor; mongo + meili live in
+# their own services and keep running across deploys. Force a new deployment
+# on the api with the module's default 200/100 (rolling) config — new task
+# comes up alongside old, passes health checks, then old drains. Zero
+# downtime for the public-facing endpoint.
 aws ecs update-service \
   --cluster "$CLUSTER" \
   --service "$SERVICE" \
   --region "$REGION" \
-  --deployment-configuration "maximumPercent=100,minimumHealthyPercent=0" \
-  --availability-zone-rebalancing DISABLED \
   --force-new-deployment >/dev/null
 
 step "6/6  poll ECS until steady state"

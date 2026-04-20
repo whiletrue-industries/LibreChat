@@ -1,16 +1,21 @@
 output "app_url" {
   description = "Public HTTPS URL for LibreChat"
-  value       = module.librechat.app_url
+  value       = module.librechat_api.app_url
 }
 
 output "ecr_repository_url" {
-  description = "ECR repository URL to push images to"
-  value       = module.librechat.ecr_repository_url
+  description = "ECR repository URL to push api images to. Mongo/meili use image_override against the shared mirror and have their own (unused) ECR repos."
+  value       = module.librechat_api.ecr_repository_url
 }
 
 output "task_role_arn" {
-  description = "IAM task role ARN"
-  value       = module.librechat.task_role_arn
+  description = "IAM task role ARN for the api service"
+  value       = module.librechat_api.task_role_arn
+}
+
+output "mongo_task_role_arn" {
+  description = "IAM task role ARN for the mongo service (mongodump backup policy attached here)"
+  value       = module.librechat_mongo.task_role_arn
 }
 
 output "librechat_file_system_id" {
