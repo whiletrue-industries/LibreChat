@@ -168,11 +168,14 @@ module "librechat_mongo" {
   log_group_kms_key_arn = local.contract.ecs.kms_key_arn
 
   internal_server = {
-    app_protocol                = "tcp"
-    port_name                   = "mongo"
-    discovery_name              = "mongo"
-    ingress_security_group_ids  = [module.librechat_api.security_group_id]
-    ingress_port_override       = 27017
+    app_protocol          = "tcp"
+    port_name             = "mongo"
+    discovery_name        = "mongo"
+    ingress_port_override = 27017
+    # Ingress stays at the cluster-wide shared internal-client SG (module
+    # default). Defense-in-depth is handled at the app layer: mongo boots
+    # with --auth and credentials come from a random_password in Secrets
+    # Manager that only the api task role can read.
   }
 
   environment_variables = {
@@ -243,11 +246,12 @@ module "librechat_meili" {
   log_group_kms_key_arn = local.contract.ecs.kms_key_arn
 
   internal_server = {
-    app_protocol                = "tcp"
-    port_name                   = "meili"
-    discovery_name              = "meili"
-    ingress_security_group_ids  = [module.librechat_api.security_group_id]
-    ingress_port_override       = 7700
+    app_protocol          = "tcp"
+    port_name             = "meili"
+    discovery_name        = "meili"
+    ingress_port_override = 7700
+    # As with mongo, relying on MEILI_MASTER_KEY at the app layer rather
+    # than restricting the ingress SG. Master key is in Secrets Manager.
   }
 
   environment_variables = {
