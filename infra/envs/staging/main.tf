@@ -49,11 +49,10 @@ resource "aws_secretsmanager_secret_version" "mongo_root_password" {
 }
 
 locals {
-  service_discovery_namespace_name = nonsensitive(local.contract.internal_services.cloud_map_namespace_name)
-  mongo_user                       = "librechat"
-  mongo_host                       = "mongo.${local.service_discovery_namespace_name}"
-  meili_host                       = "meili.${local.service_discovery_namespace_name}"
-  mongo_uri                        = "mongodb://${local.mongo_user}:${random_password.mongo_root.result}@${local.mongo_host}:27017/LibreChat?authSource=admin"
+  mongo_user = "librechat"
+  mongo_host = "mongo"
+  meili_host = "meili"
+  mongo_uri  = "mongodb://${local.mongo_user}:${random_password.mongo_root.result}@${local.mongo_host}:27017/LibreChat?authSource=admin"
 }
 
 resource "aws_secretsmanager_secret" "mongo_uri" {
