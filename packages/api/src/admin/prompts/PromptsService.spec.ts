@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { agentPromptSchema, messageSchema } from '@librechat/data-schemas';
-import type { IAgentPrompt, IMessage, AgentType } from '@librechat/data-schemas';
+import { agentPromptSchema, messageSchema, convoSchema } from '@librechat/data-schemas';
+import type { IAgentPrompt, IMessage, IConversation, AgentType } from '@librechat/data-schemas';
 import {
   getActiveSections,
   saveDraft,
@@ -249,12 +249,14 @@ describe('PromptsService.getVersionUsage', () => {
   let mem: MongoMemoryServer;
   let AgentPrompt: mongoose.Model<IAgentPrompt>;
   let Message: mongoose.Model<IMessage>;
+  let Conversation: mongoose.Model<IConversation>;
 
   beforeAll(async () => {
     mem = await MongoMemoryServer.create();
     await mongoose.connect(mem.getUri());
     AgentPrompt = mongoose.model<IAgentPrompt>('AgentPromptUsage', agentPromptSchema);
     Message = mongoose.model<IMessage>('MessageUsage', messageSchema);
+    Conversation = mongoose.model<IConversation>('ConvoUsage', convoSchema);
   });
 
   afterAll(async () => {
@@ -265,6 +267,12 @@ describe('PromptsService.getVersionUsage', () => {
   beforeEach(async () => {
     await AgentPrompt.deleteMany({});
     await Message.deleteMany({});
+    await Conversation.deleteMany({});
+    await Conversation.create([
+      { conversationId: 'c1', user: 'u1', agent_id: 'agent_live', endpoint: 'agents' },
+      { conversationId: 'c2', user: 'u1', agent_id: 'agent_live', endpoint: 'agents' },
+      { conversationId: 'c3', user: 'u1', agent_id: 'agent_live', endpoint: 'agents' },
+    ]);
   });
 
   async function seedVersions() {
@@ -301,6 +309,7 @@ describe('PromptsService.getVersionUsage', () => {
     const out = await getVersionUsage({
       AgentPrompt,
       Message,
+      Conversation,
       agentType: 'unified',
       sectionKey: 'preamble',
       versionId: new mongoose.Types.ObjectId(String(v1._id)),
@@ -330,6 +339,7 @@ describe('PromptsService.getVersionUsage', () => {
     const out = await getVersionUsage({
       AgentPrompt,
       Message,
+      Conversation,
       agentType: 'unified',
       sectionKey: 'preamble',
       versionId: new mongoose.Types.ObjectId(String(v2._id)),
@@ -354,6 +364,7 @@ describe('PromptsService.getVersionUsage', () => {
       getVersionUsage({
         AgentPrompt,
         Message,
+        Conversation,
         agentType: 'unified',
         sectionKey: 'preamble',
         versionId: new mongoose.Types.ObjectId(String(stray._id)),

@@ -208,11 +208,12 @@ async function putTestQuestions(req, res) {
 
 async function getUsage(req, res) {
   try {
-    const { AgentPrompt: agentPrompt, Message } = require('~/db/models');
+    const { AgentPrompt: agentPrompt, Message, Conversation } = require('~/db/models');
     const mongoose = require('mongoose');
     const usage = await AdminPrompts.getVersionUsage({
       AgentPrompt: agentPrompt,
       Message,
+      Conversation,
       agentType: req.params.agent,
       sectionKey: req.params.key,
       versionId: new mongoose.Types.ObjectId(req.params.versionId),

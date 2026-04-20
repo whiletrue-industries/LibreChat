@@ -1,5 +1,5 @@
 import type { Model, Types } from 'mongoose';
-import type { IAgentPrompt, IMessage } from '@librechat/data-schemas';
+import type { IAgentPrompt, IMessage, IConversation } from '@librechat/data-schemas';
 import { assemble } from './assemble';
 
 export type AgentType = 'unified';
@@ -205,6 +205,7 @@ export async function restore(input: RestoreInput): Promise<AgentPromptRow> {
 
 export interface GetVersionUsageInput extends BaseDeps {
   Message: Model<IMessage>;
+  Conversation: Model<IConversation>;
   agentType: AgentType;
   sectionKey: string;
   versionId: Types.ObjectId;
@@ -259,10 +260,30 @@ export async function getVersionUsage(input: GetVersionUsageInput): Promise<Vers
   if (windowEnd) {
     createdAtFilter.$lt = windowEnd;
   }
+
+  // LibreChat messages don't store the agent_id — they store the OpenAI model
+  // name (e.g. "gpt-5.4-mini") in the `model` field. The agent binding lives
+  // on the conversation. So: fetch the conversationIds this liveAgentId owns,
+  // then filter messages to only those conversations within the window.
+  const agentConvos = await input.Conversation
+    .find({ agent_id: input.liveAgentId }, { conversationId: 1 })
+    .lean<Array<{ conversationId: string }>>()
+    .exec();
+  const convoIds = agentConvos.map((c) => c.conversationId);
+  if (convoIds.length === 0) {
+    return {
+      windowStart,
+      windowEnd,
+      messageCount: 0,
+      conversationCount: 0,
+      conversations: [],
+    };
+  }
+
   const match = {
     isCreatedByUser: false,
     endpoint: 'agents',
-    model: input.liveAgentId,
+    conversationId: { $in: convoIds },
     createdAt: createdAtFilter,
   };
 
