@@ -168,10 +168,13 @@ module "librechat_mongo" {
   log_group_kms_key_arn = local.contract.ecs.kms_key_arn
 
   internal_server = {
-    app_protocol          = "tcp"
-    port_name             = "mongo"
-    discovery_name        = "mongo"
-    ingress_port_override = 27017
+    app_protocol   = "tcp"
+    port_name      = "mongo"
+    discovery_name = "mongo"
+    # ingress_port_override omitted: AWS rejects it when it equals the
+    # container port. Clients hit Service Connect on 27017 → proxy →
+    # task on 27017 directly.
+    #
     # Ingress stays at the cluster-wide shared internal-client SG (module
     # default). Defense-in-depth is handled at the app layer: mongo boots
     # with --auth and credentials come from a random_password in Secrets
@@ -240,16 +243,17 @@ module "librechat_meili" {
 
   desired_count = var.desired_count
 
+  # Fargate requires valid CPU/memory combos; 512 CPU minimum memory is 1024.
   cpu    = 512
-  memory = 512
+  memory = 1024
 
   log_group_kms_key_arn = local.contract.ecs.kms_key_arn
 
   internal_server = {
-    app_protocol          = "tcp"
-    port_name             = "meili"
-    discovery_name        = "meili"
-    ingress_port_override = 7700
+    app_protocol   = "tcp"
+    port_name      = "meili"
+    discovery_name = "meili"
+    # ingress_port_override omitted: AWS rejects override==containerPort.
     # As with mongo, relying on MEILI_MASTER_KEY at the app layer rather
     # than restricting the ingress SG. Master key is in Secrets Manager.
   }
