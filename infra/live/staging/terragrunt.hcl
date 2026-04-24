@@ -18,5 +18,5 @@ inputs = {
   # scripts/seed-botnim-agent.js. Read by api/server/index.js into
   # app.locals.liveAgentIds.unified for the admin prompt-management
   # publish flow.
-  botnim_agent_id_unified = "agent_rQ6pcpy-pvgu18HKs9oO9"
+  botnim_agent_id_unified = "agent_2VTUzZmlh8wzHIpq8GEa9"
 }
