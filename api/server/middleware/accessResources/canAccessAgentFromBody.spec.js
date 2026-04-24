@@ -104,13 +104,29 @@ describe('canAccessAgentFromBody middleware', () => {
   });
 
   describe('primary agent checks', () => {
-    test('returns 400 when agent_id is missing on agents endpoint', async () => {
+    test('returns 400 when agent_id is missing on agents endpoint and no deployment fallback is configured', async () => {
       req.body.agent_id = undefined;
+      // No req.app at all (or req.app.locals.liveAgentIds empty) — ensure
+      // the fallback does not kick in and the original 400 behaviour stands.
+      req.app = { locals: { liveAgentIds: {} } };
       const middleware = canAccessAgentFromBody({ requiredPermission: 1 });
       await middleware(req, res, next);
 
       expect(next).not.toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(400);
+    });
+
+    test('falls back to liveAgentIds.unified when agent_id is missing on agents endpoint', async () => {
+      req.body.agent_id = undefined;
+      req.app = { locals: { liveAgentIds: { unified: 'ephemeral_unified_fallback' } } };
+      const middleware = canAccessAgentFromBody({ requiredPermission: 1 });
+      await middleware(req, res, next);
+
+      expect(res.status).not.toHaveBeenCalledWith(400);
+      expect(next).toHaveBeenCalled();
+      // Fallback is also written back into req.body so downstream handlers
+      // see a consistent agent_id on the request.
+      expect(req.body.agent_id).toBe('ephemeral_unified_fallback');
     });
 
     test('proceeds for ephemeral primary agent without addedConvo', async () => {

@@ -163,6 +163,22 @@ const canAccessAgentFromBody = (options) => {
         agentId = Constants.EPHEMERAL_AGENT_ID;
       }
 
+      // Deployment-level fallback: on the agents endpoint with no agent_id
+      // in the body (e.g. user lands on /c/new with no ?agent_id= query
+      // param), fall back to the canonical "live" unified agent configured
+      // via the BOTNIM_AGENT_ID_UNIFIED env var and wired into
+      // app.locals.liveAgentIds.unified in api/server/index.js. Without
+      // this, any user who opens the bare domain gets a 400 instead of a
+      // working chat. If the deployment hasn't configured a live agent,
+      // the original 400 still fires below.
+      if (!agentId) {
+        const liveUnifiedId = req.app?.locals?.liveAgentIds?.unified;
+        if (liveUnifiedId) {
+          agentId = liveUnifiedId;
+          req.body.agent_id = liveUnifiedId;
+        }
+      }
+
       if (!agentId) {
         return res.status(400).json({
           error: 'Bad Request',
