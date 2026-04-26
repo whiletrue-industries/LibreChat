@@ -8,6 +8,23 @@
  * using an in-memory MongoDB. The patchLibreChatAgent side-effect is stubbed
  * with a jest.fn() so the publish path can run without a real
  * shadow-agent backend.
+ *
+ * Aurora mock strategy
+ * --------------------
+ * The default mock (applied to the whole file) makes the aurora adapter
+ * behave as follows for the existing Mongo-integration tests:
+ *
+ *   - Read methods (listSections, listVersions, getTestQuestions, getPool)
+ *     → throw, so the controller falls back to Mongo.
+ *
+ *   - Write methods (saveDraft, publish, restore, putTestQuestions)
+ *     → delegate to real Mongoose models (the same in-memory MongoDB), so
+ *       the existing write-path assertions continue to pass unmodified.
+ *
+ * New Aurora-primary tests in the describe block at the bottom use
+ * jest.doMock + jest.resetModules to swap in a lightweight stub that
+ * returns fake PG row objects, exercising the controller's camelCase-mapping
+ * and the 503 / 409 error branches without touching any database.
  */
 
 const express = require('express');
@@ -29,6 +46,167 @@ const mockPatchLibreChatAgent = jest.fn().mockResolvedValue(undefined);
 jest.mock('~/server/services/prompts/agentPatcher', () => ({
   patchLibreChatAgent: (...args) => mockPatchLibreChatAgent(...args),
 }));
+
+// ── Default aurora mock ───────────────────────────────────────────────────────
+// Reads throw so the controller falls back to Mongo.
+// Writes delegate to Mongoose so existing write-path tests stay green.
+
+jest.mock('~/server/services/AdminPrompts/aurora', () => {
+  const { AdminPrompts } = require('@librechat/api');
+  const { AgentPrompt, AgentPromptTestQuestion } = require('~/db/models');
+
+  // getPool throws so listAgents and the hasDraft query both fall back to Mongo.
+  const getPool = () => {
+    throw new Error('Aurora not configured in test');
+  };
+
+  // All read functions throw → controller falls back to Mongo.
+  const listSections = () => Promise.reject(new Error('Aurora not configured in test'));
+  const listVersions = () => Promise.reject(new Error('Aurora not configured in test'));
+  const getTestQuestions = () => Promise.reject(new Error('Aurora not configured in test'));
+  const getVersionUsage = () => Promise.reject(new Error('Aurora not configured in test'));
+
+  // Write functions proxy to Mongoose so existing write tests pass.
+  const saveDraft = async ({ agentType, sectionKey, body, changeNote, createdBy }) => {
+    const mongoose_ = require('mongoose');
+    const row = await AdminPrompts.saveDraft({
+      AgentPrompt,
+      agentType,
+      sectionKey,
+      body,
+      changeNote,
+      createdBy: createdBy ? new mongoose_.Types.ObjectId(createdBy) : undefined,
+    });
+    // Return a pg-row-shaped object so rowToMongoose works.
+    return {
+      id: row._id.toString(),
+      agent_type: row.agentType,
+      section_key: row.sectionKey,
+      ordinal: row.ordinal,
+      header_text: row.headerText,
+      body: row.body,
+      active: row.active,
+      is_draft: row.isDraft,
+      parent_version_id: row.parentVersionId ? row.parentVersionId.toString() : null,
+      change_note: row.changeNote,
+      created_at: row.createdAt,
+      created_by: row.createdBy ? row.createdBy.toString() : null,
+      published_at: row.publishedAt || null,
+    };
+  };
+
+  const publish = async ({ agentType, sectionKey, draftId, parentVersionId }) => {
+    // The controller passes us the draftId it created. We need to simulate
+    // Aurora's behaviour: demote old active, promote draft, return new active.
+    // Re-use the draft row that saveDraft already wrote, then activate it.
+    const mongoose_ = require('mongoose');
+
+    // Locate the current active row.
+    const current = await AgentPrompt.findOne({ agentType, sectionKey, active: true }).lean();
+    const parentId = parentVersionId
+      ? parentVersionId.toString()
+      : null;
+    if (!current || current._id.toString() !== parentId) {
+      throw new Error('stale parent: parentVersionId is no longer the active row');
+    }
+    // Demote old.
+    await AgentPrompt.updateOne({ _id: current._id }, { $set: { active: false } });
+    // Promote the draft.
+    const draft = await AgentPrompt.findById(new mongoose_.Types.ObjectId(draftId));
+    if (!draft) {
+      throw new Error(`draft ${draftId} not found`);
+    }
+    draft.active = true;
+    draft.isDraft = false;
+    draft.publishedAt = new Date();
+    await draft.save();
+    const row = draft.toObject();
+    return {
+      id: row._id.toString(),
+      agent_type: row.agentType,
+      section_key: row.sectionKey,
+      ordinal: row.ordinal,
+      header_text: row.headerText,
+      body: row.body,
+      active: row.active,
+      is_draft: row.isDraft,
+      parent_version_id: row.parentVersionId ? row.parentVersionId.toString() : null,
+      change_note: row.changeNote,
+      created_at: row.createdAt,
+      created_by: row.createdBy ? row.createdBy.toString() : null,
+      published_at: row.publishedAt || null,
+    };
+  };
+
+  const restore = async ({ agentType, sectionKey, versionId }) => {
+    const mongoose_ = require('mongoose');
+    const source = await AgentPrompt.findById(new mongoose_.Types.ObjectId(versionId)).lean();
+    if (!source) throw new Error(`version ${versionId} not found`);
+    if (source.agentType !== agentType || source.sectionKey !== sectionKey) {
+      throw new Error(`version ${versionId} does not match ${agentType}/${sectionKey}`);
+    }
+    const current = await AgentPrompt.findOne({ agentType, sectionKey, active: true }).lean();
+    await AgentPrompt.updateOne({ _id: current._id }, { $set: { active: false } });
+    const doc = await AgentPrompt.create({
+      agentType,
+      sectionKey,
+      ordinal: source.ordinal,
+      headerText: source.headerText,
+      body: source.body,
+      active: true,
+      isDraft: false,
+      parentVersionId: current._id,
+      publishedAt: new Date(),
+    });
+    const row = doc.toObject();
+    return {
+      id: row._id.toString(),
+      agent_type: row.agentType,
+      section_key: row.sectionKey,
+      ordinal: row.ordinal,
+      header_text: row.headerText,
+      body: row.body,
+      active: row.active,
+      is_draft: row.isDraft,
+      parent_version_id: row.parentVersionId ? row.parentVersionId.toString() : null,
+      change_note: row.changeNote || null,
+      created_at: row.createdAt,
+      created_by: row.createdBy ? row.createdBy.toString() : null,
+      published_at: row.publishedAt || null,
+    };
+  };
+
+  const putTestQuestions = async ({ agentType, questions, createdBy }) => {
+    await AgentPromptTestQuestion.deleteMany({ agentType });
+    if (questions.length > 0) {
+      await AgentPromptTestQuestion.insertMany(
+        questions.map((q, i) => ({
+          agentType,
+          text: q.text,
+          ordinal: q.ordinal ?? i,
+          enabled: q.enabled ?? true,
+          createdBy: createdBy || undefined,
+        })),
+      );
+    }
+    return { ok: true };
+  };
+
+  return {
+    getPool,
+    listSections,
+    listVersions,
+    getTestQuestions,
+    getVersionUsage,
+    saveDraft,
+    publish,
+    restore,
+    putTestQuestions,
+    _resetPoolForTesting: () => {},
+  };
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 const { SystemRoles } = require('librechat-data-provider');
 const { Strategy: JwtStrategy, ExtractJwt } = require('passport-jwt');
@@ -371,5 +549,246 @@ describe('test-questions routes', () => {
       .set('Authorization', `Bearer ${userToken}`)
       .send({ questions: [] });
     expect(res.status).toBe(403);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Aurora-primary path tests
+// These tests directly invoke the controller functions (bypassing Express
+// routing) with fine-grained mocks, exercising:
+//   • the rowToMongoose camelCase mapping
+//   • the Mongo fallback path on Aurora read failure
+//   • the 503 path on Aurora write failure (no Mongo fallback)
+//   • the 409 stale-parent path on Aurora publish
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('promptsController — Aurora-primary paths (unit)', () => {
+  // Pull in the real aurora mock from above (the module-level mock is already
+  // active). We re-require the controller at unit level to exercise it with
+  // swapped mock implementations.
+
+  const aurora = require('~/server/services/AdminPrompts/aurora');
+
+  // Build a minimal req/res pair for unit invocations.
+  function makeReq(overrides = {}) {
+    return {
+      params: { agent: 'unified', key: 'intro', ...overrides.params },
+      body: {},
+      user: { id: adminUserId },
+      log: { warn: jest.fn(), error: jest.fn() },
+      headers: {},
+      app: { locals: { liveAgentIds: { unified: 'live' } } },
+      query: {},
+      ...overrides,
+    };
+  }
+
+  function makeRes() {
+    const res = { status: jest.fn(), json: jest.fn() };
+    res.status.mockReturnValue(res);
+    return res;
+  }
+
+  // ── listSections → Aurora success path ──────────────────────────────────
+
+  it('listSections returns camelCase sections with source=aurora when Aurora succeeds', async () => {
+    const auroraRow = {
+      id: 'uuid-1',
+      agent_type: 'unified',
+      section_key: 'intro',
+      ordinal: 0,
+      header_text: 'Intro',
+      body: 'hello',
+      active: true,
+      is_draft: false,
+      parent_version_id: null,
+      change_note: null,
+      created_at: new Date('2026-01-01'),
+      created_by: null,
+      published_at: new Date('2026-01-01'),
+    };
+    // Temporarily override listSections and getPool.
+    const originalListSections = aurora.listSections;
+    const originalGetPool = aurora.getPool;
+    aurora.listSections = jest.fn().mockResolvedValue([auroraRow]);
+    aurora.getPool = jest.fn().mockReturnValue({
+      query: jest.fn().mockResolvedValue({ rows: [] }),
+    });
+
+    const { listSections } = require('~/server/controllers/admin/promptsController');
+    const req = makeReq();
+    const res = makeRes();
+    await listSections(req, res);
+
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: 'aurora',
+        sections: expect.arrayContaining([
+          expect.objectContaining({
+            sectionKey: 'intro',
+            body: 'hello',
+            active: true,
+            isDraft: false,
+          }),
+        ]),
+      }),
+    );
+
+    aurora.listSections = originalListSections;
+    aurora.getPool = originalGetPool;
+  });
+
+  // ── listSections → Mongo fallback path ───────────────────────────────────
+
+  it('listSections falls back to Mongo and returns sections when Aurora throws', async () => {
+    // Aurora mock already throws for listSections — seed a Mongo row.
+    await seedActiveSection({ sectionKey: 'intro' });
+
+    const { listSections } = require('~/server/controllers/admin/promptsController');
+    const req = makeReq();
+    const res = makeRes();
+    await listSections(req, res);
+
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: 'mongo-fallback',
+        sections: expect.arrayContaining([
+          expect.objectContaining({ sectionKey: 'intro' }),
+        ]),
+      }),
+    );
+    await AgentPrompt.deleteMany({});
+  });
+
+  // ── listVersions → Mongo fallback path ───────────────────────────────────
+
+  it('listVersions falls back to Mongo when Aurora throws', async () => {
+    await AgentPrompt.create({
+      agentType: 'unified',
+      sectionKey: 'intro',
+      ordinal: 0,
+      headerText: 'Intro',
+      body: 'v1',
+      active: true,
+      isDraft: false,
+      createdAt: new Date('2026-01-01'),
+    });
+
+    const { listVersions } = require('~/server/controllers/admin/promptsController');
+    const req = makeReq();
+    const res = makeRes();
+    await listVersions(req, res);
+
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: 'mongo-fallback',
+        versions: expect.arrayContaining([expect.objectContaining({ body: 'v1' })]),
+      }),
+    );
+    await AgentPrompt.deleteMany({});
+  });
+
+  // ── saveDraft → 503 on Aurora failure ────────────────────────────────────
+
+  it('saveDraft returns 503 when Aurora throws a non-404 error', async () => {
+    const originalSaveDraft = aurora.saveDraft;
+    aurora.saveDraft = jest.fn().mockRejectedValue(new Error('connection refused'));
+
+    const { saveDraft } = require('~/server/controllers/admin/promptsController');
+    const req = makeReq({ body: { body: 'new draft', changeNote: 'c' } });
+    const res = makeRes();
+    await saveDraft(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ error: expect.stringMatching(/unavailable/i) }),
+    );
+
+    aurora.saveDraft = originalSaveDraft;
+  });
+
+  // ── saveDraft → 404 when no active section ────────────────────────────────
+
+  it('saveDraft returns 404 when Aurora throws "no active section"', async () => {
+    const originalSaveDraft = aurora.saveDraft;
+    aurora.saveDraft = jest
+      .fn()
+      .mockRejectedValue(new Error('no active section: unified/intro'));
+
+    const { saveDraft } = require('~/server/controllers/admin/promptsController');
+    const req = makeReq({ body: { body: 'irrelevant', changeNote: 'n' } });
+    const res = makeRes();
+    await saveDraft(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+
+    aurora.saveDraft = originalSaveDraft;
+  });
+
+  // ── publish → 409 on stale parent ────────────────────────────────────────
+
+  it('publish returns 409 when Aurora throws stale parent', async () => {
+    // Seed a real active Mongo row so the controller can populate current.
+    const active = await seedActiveSection({ sectionKey: 'intro' });
+
+    const originalSaveDraft = aurora.saveDraft;
+    const originalPublish = aurora.publish;
+    const originalListSections = aurora.listSections;
+
+    // saveDraft stub returns a fake row so publish can proceed.
+    aurora.saveDraft = jest.fn().mockResolvedValue({ id: 'draft-uuid' });
+    aurora.publish = jest
+      .fn()
+      .mockRejectedValue(new Error('stale parent: parentVersionId is no longer the active row'));
+    aurora.listSections = jest.fn().mockRejectedValue(new Error('Aurora down'));
+
+    const { publish } = require('~/server/controllers/admin/promptsController');
+    const req = makeReq({
+      params: { agent: 'unified', key: 'intro' },
+      body: {
+        parentVersionId: new mongoose.Types.ObjectId().toString(),
+        body: 'update',
+        changeNote: 'c',
+      },
+    });
+    const res = makeRes();
+    await publish(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ error: 'stale parent' }),
+    );
+
+    aurora.saveDraft = originalSaveDraft;
+    aurora.publish = originalPublish;
+    aurora.listSections = originalListSections;
+    await AgentPrompt.deleteMany({});
+  });
+
+  // ── publish → 503 on generic Aurora failure ───────────────────────────────
+
+  it('publish returns 503 on non-stale-parent Aurora failure', async () => {
+    const originalSaveDraft = aurora.saveDraft;
+    const originalPublish = aurora.publish;
+
+    aurora.saveDraft = jest.fn().mockResolvedValue({ id: 'draft-uuid' });
+    aurora.publish = jest.fn().mockRejectedValue(new Error('DB connection lost'));
+
+    const { publish } = require('~/server/controllers/admin/promptsController');
+    const req = makeReq({
+      params: { agent: 'unified', key: 'intro' },
+      body: {
+        parentVersionId: new mongoose.Types.ObjectId().toString(),
+        body: 'update',
+        changeNote: 'c',
+      },
+    });
+    const res = makeRes();
+    await publish(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(503);
+
+    aurora.saveDraft = originalSaveDraft;
+    aurora.publish = originalPublish;
   });
 });

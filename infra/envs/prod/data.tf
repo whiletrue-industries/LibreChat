@@ -2,6 +2,12 @@ data "aws_ssm_parameter" "platform_contract" {
   name = "/buildup/shared/${var.environment}/contract"
 }
 
+# Aurora DB credentials shared with botnim-api (same DB; AdminPrompts table)
+# The Database Provision workflow publishes the secret ARN at this SSM path.
+data "aws_ssm_parameter" "database_credentials_secret_arn" {
+  name = "/buildup/projects/botnim/prod/database_credentials_secret_arn"
+}
+
 locals {
   # The platform contract SSM parameter is marked sensitive end-to-end; the
   # subfields we read here (zone name, subnet IDs) aren't actually secret, so

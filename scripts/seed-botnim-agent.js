@@ -2,10 +2,10 @@
 /**
  * Idempotent seed script for the "Botnim" agent on upstream LibreChat v0.8.4.
  *
- * Reads from /srv/specs (mounted from rebuilding-bots/specs/):
- *   - unified/agent.txt  — agent instructions
- *   - openapi/*.yaml     — one OpenAPI spec per tool family; each becomes
- *                          one Action on the agent
+ * Reads from:
+ *   - Aurora (agent_prompts table)  — agent instructions (sections)
+ *   - /srv/specs/openapi/*.yaml     — one OpenAPI spec per tool family; each becomes
+ *                                     one Action on the agent
  *
  * Authenticates as admin@botnim.local (credentials via env) and either
  * creates the Botnim agent or finds an existing one by name, then
@@ -23,6 +23,8 @@
  *   SEED_AGENT_NAME     (default "בוט מאוחד - תקנון, חוקים ותקציב")
  *   SEED_MODEL          (default gpt-5.4-mini)
  *   SEED_SPECS_DIR      (default /srv/specs)
+ *   DATABASE_URL        — Aurora connection (required unless DB_HOST/etc are set)
+ *   DB_HOST             — Aurora host (use with DB_USER, DB_PASSWORD, DB_PORT, DB_NAME)
  */
 
 const fs = require('fs');
@@ -31,6 +33,8 @@ const yaml = require('js-yaml');
 
 const { openapiToFunction, validateAndParseOpenAPISpec } =
   require('librechat-data-provider');
+const aurora = require(path.resolve(__dirname, '..', 'api', 'server', 'services', 'AdminPrompts', 'aurora'));
+const { AdminPrompts } = require('@librechat/api');
 
 const EMAIL = process.env.SEED_ADMIN_EMAIL || 'admin@botnim.local';
 const PASSWORD = process.env.SEED_ADMIN_PASSWORD || 'admin123';
@@ -83,45 +87,44 @@ async function listAgents(token) {
   return body.data || [];
 }
 
-function instructionsFromFile() {
-  const fp = path.join(SPECS_DIR, 'unified', 'agent.txt');
-  if (!fs.existsSync(fp)) {
-    throw new Error(`instructions file not found at ${fp}`);
-  }
-  return fs.readFileSync(fp, 'utf8');
+function rowToMongoose(row) {
+  if (!row) return row;
+  return {
+    id: row.id,
+    agentType: row.agent_type,
+    sectionKey: row.section_key,
+    ordinal: row.ordinal,
+    headerText: row.header_text,
+    body: row.body,
+    active: row.active,
+    isDraft: row.is_draft,
+    parentVersionId: row.parent_version_id,
+    changeNote: row.change_note,
+    createdAt: row.created_at,
+    createdBy: row.created_by,
+    publishedAt: row.published_at,
+  };
 }
 
 async function instructionsText() {
-  const mongoUri = process.env.SEED_MONGO_URI || process.env.MONGO_URI;
-  if (!mongoUri) {
-    return instructionsFromFile();
-  }
-  let mongoose;
-  let createModels;
-  let AdminPrompts;
   try {
-    mongoose = require('mongoose');
-    ({ createModels } = require('@librechat/data-schemas'));
-    ({ AdminPrompts } = require(path.join(
-      __dirname, '..', 'packages', 'api', 'dist', 'index.js',
-    )));
-  } catch (err) {
-    console.warn(`[seed] DB path unavailable (${err.message}); falling back to file`);
-    return instructionsFromFile();
-  }
-  await mongoose.connect(mongoUri);
-  try {
-    const { AgentPrompt } = createModels(mongoose);
-    const sections = await AdminPrompts.getActiveSections({
-      AgentPrompt,
-      agentType: 'unified',
-    });
-    if (sections.length === 0) {
-      return instructionsFromFile();
+    const rows = await aurora.listSections('unified');
+    if (!rows || rows.length === 0) {
+      throw new Error(
+        'No sections in agent_prompts for agent_type=unified. ' +
+        'Aurora must be seeded before running seed-botnim-agent.js. ' +
+        'Use the LibreChat admin UI at /admin/prompts to create sections, ' +
+        'or ensure agent_prompts table is populated.',
+      );
     }
+    const sections = rows.map(rowToMongoose);
     return AdminPrompts.assemble(sections);
-  } finally {
-    await mongoose.disconnect();
+  } catch (err) {
+    if (/Aurora.*requires DB_HOST/i.test(err.message) || /no sections/i.test(err.message)) {
+      throw err;
+    }
+    // Re-throw any connection or query errors
+    throw new Error(`Failed to read instructions from Aurora: ${err.message}`);
   }
 }
 
