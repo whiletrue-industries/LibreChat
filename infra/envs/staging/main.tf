@@ -120,16 +120,29 @@ module "librechat_api" {
     BOTNIM_AGENT_ID_UNIFIED = var.botnim_agent_id_unified
   }
 
-  secret_environment_variables = {
-    MONGO_URI               = aws_secretsmanager_secret.mongo_uri.arn
-    OPENAI_API_KEY          = aws_secretsmanager_secret.openai_api_key.arn
-    JWT_SECRET              = aws_secretsmanager_secret.jwt_secret.arn
-    JWT_REFRESH_SECRET      = aws_secretsmanager_secret.jwt_refresh_secret.arn
-    CREDS_KEY               = aws_secretsmanager_secret.creds_key.arn
-    CREDS_IV                = aws_secretsmanager_secret.creds_iv.arn
-    MEILI_MASTER_KEY        = aws_secretsmanager_secret.meili_master_key.arn
-    BOOTSTRAP_USER_PASSWORD = aws_secretsmanager_secret.bootstrap_user_password.arn
-  }
+  secret_environment_variables = merge(
+    {
+      MONGO_URI               = aws_secretsmanager_secret.mongo_uri.arn
+      OPENAI_API_KEY          = aws_secretsmanager_secret.openai_api_key.arn
+      JWT_SECRET              = aws_secretsmanager_secret.jwt_secret.arn
+      JWT_REFRESH_SECRET      = aws_secretsmanager_secret.jwt_refresh_secret.arn
+      CREDS_KEY               = aws_secretsmanager_secret.creds_key.arn
+      CREDS_IV                = aws_secretsmanager_secret.creds_iv.arn
+      MEILI_MASTER_KEY        = aws_secretsmanager_secret.meili_master_key.arn
+      BOOTSTRAP_USER_PASSWORD = aws_secretsmanager_secret.bootstrap_user_password.arn
+    },
+    {
+      DB_HOST     = "${data.aws_ssm_parameter.database_credentials_secret_arn.value}:host::"
+      DB_PORT     = "${data.aws_ssm_parameter.database_credentials_secret_arn.value}:port::"
+      DB_NAME     = "${data.aws_ssm_parameter.database_credentials_secret_arn.value}:dbname::"
+      DB_USER     = "${data.aws_ssm_parameter.database_credentials_secret_arn.value}:username::"
+      DB_PASSWORD = "${data.aws_ssm_parameter.database_credentials_secret_arn.value}:password::"
+    },
+  )
+
+  enable_aurora_access = true
+
+  secret_arns = [data.aws_ssm_parameter.database_credentials_secret_arn.value]
 
   # The api is stateless now — no EFS, no sidecar_containers, no
   # primary_container_mount_points.
