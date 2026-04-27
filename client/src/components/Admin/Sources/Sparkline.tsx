@@ -12,7 +12,7 @@ type Props = {
 
 const Sparkline: React.FC<Props> = ({ points, width = 100, height = 24 }) => {
   if (points.length < 2) {
-    return <span style={{ opacity: 0.5, fontSize: 11 }}>—</span>;
+    return <span className="text-xs text-text-secondary">—</span>;
   }
   const counts = points.map((p) => p.count);
   const min = Math.min(...counts);

@@ -1,7 +1,7 @@
 import { useState, memo, useRef } from 'react';
 import * as Menu from '@ariakit/react/menu';
 import { useNavigate } from 'react-router-dom';
-import { BarChart3, FileText, LogOut } from 'lucide-react';
+import { BarChart3, Database, FileText, LogOut } from 'lucide-react';
 import { SystemRoles } from 'librechat-data-provider';
 import { LinkIcon, GearIcon, DropdownMenuSeparator, Avatar } from '@librechat/client';
 import { MyFilesModal } from '~/components/Chat/Input/Files/MyFilesModal';
@@ -96,6 +96,15 @@ function AccountSettings() {
           >
             <FileText className="icon-md" aria-hidden="true" />
             {localize('com_admin_prompts_title')}
+          </Menu.MenuItem>
+        )}
+        {isAdmin && (
+          <Menu.MenuItem
+            onClick={() => navigate('/d/sources')}
+            className="select-item text-sm"
+          >
+            <Database className="icon-md" aria-hidden="true" />
+            {localize('com_admin_sources_title')}
           </Menu.MenuItem>
         )}
         <DropdownMenuSeparator />

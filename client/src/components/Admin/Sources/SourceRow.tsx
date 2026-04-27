@@ -22,25 +22,38 @@ const SourceRow: React.FC<Props> = ({ ctx }) => {
     <>
       <tr
         onClick={() => setExpanded((s) => !s)}
-        style={{
-          cursor: 'pointer',
-          borderLeft: alert ? '3px solid #c0392b' : '3px solid transparent',
-          background: alert ? 'rgba(192,57,43,0.04)' : undefined,
-        }}
+        className={
+          'cursor-pointer border-l-[3px] hover:bg-surface-primary-alt ' +
+          (alert
+            ? 'border-red-500 bg-red-50 dark:bg-red-950/20'
+            : 'border-transparent')
+        }
       >
-        <td style={{ padding: '10px 14px' }}>
-          {alert ? '⚠ ' : ''}<span style={{ fontWeight: 600 }}>{ctx.context}</span>
+        <td className="px-4 py-2.5 text-text-primary">
+          {alert ? <span className="text-red-600 dark:text-red-400">⚠ </span> : null}
+          <span className="font-semibold">{ctx.context}</span>
         </td>
-        <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: alert ? '#c0392b' : undefined }}>
+        <td
+          className={
+            'px-4 py-2.5 text-right tabular-nums ' +
+            (alert ? 'text-red-600 dark:text-red-400' : 'text-text-primary')
+          }
+        >
           {ctx.doc_count.toLocaleString()}
         </td>
-        <td><Sparkline points={ctx.sparkline} /></td>
-        <td style={{ fontSize: 12, opacity: 0.8 }}>{relativeAge(ctx.last_synced_at)}</td>
-        <td style={{ textAlign: 'center', opacity: 0.6 }}>{expanded ? '▾' : '▸'}</td>
+        <td className="px-4 py-2.5">
+          <Sparkline points={ctx.sparkline} />
+        </td>
+        <td className="px-4 py-2.5 text-sm text-text-secondary">
+          {relativeAge(ctx.last_synced_at)}
+        </td>
+        <td className="w-8 text-center text-text-secondary">
+          {expanded ? '▾' : '▸'}
+        </td>
       </tr>
       {expanded && (
         <tr>
-          <td colSpan={5} style={{ padding: 0 }}>
+          <td colSpan={5} className="p-0">
             <SourceBreakdown context={ctx.context} />
           </td>
         </tr>

@@ -14,71 +14,71 @@ const externalLink = (sourceId: string): string | null => {
   return `https://he.wikisource.org/wiki/${encodeURIComponent(sourceId)}`;
 };
 
+const ROW_GRID = 'grid grid-cols-[1fr_90px_120px_70px_30px] items-center';
+
 const SourceBreakdown: React.FC<Props> = ({ context }) => {
   const { data, isLoading, error } = useAdminSourceQuery(context, { enabled: true });
 
   if (isLoading) {
-    return <div style={{ padding: 14, opacity: 0.7 }}>loading…</div>;
+    return (
+      <div className="bg-surface-primary-alt p-4 text-sm text-text-secondary">
+        loading…
+      </div>
+    );
   }
   if (error) {
-    return <div style={{ padding: 14, color: '#c0392b' }}>error</div>;
+    return (
+      <div className="bg-surface-primary-alt p-4 text-sm text-red-600 dark:text-red-400">
+        error
+      </div>
+    );
   }
   if (!data || !data.context_summary) {
-    return <div style={{ padding: 14 }}>no snapshots</div>;
+    return (
+      <div className="bg-surface-primary-alt p-4 text-sm text-text-secondary">
+        no snapshots
+      </div>
+    );
   }
 
   return (
-    <div style={{ padding: 14, background: 'rgba(127,127,127,0.04)' }}>
-      <div style={{ marginBottom: 10 }}>
+    <div className="bg-surface-primary-alt p-4">
+      <div className="mb-3">
         <Sparkline points={data.context_summary.sparkline} width={500} height={64} />
       </div>
       <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 90px 120px 70px 30px',
-          fontSize: 10,
-          textTransform: 'uppercase',
-          letterSpacing: '0.6px',
-          opacity: 0.6,
-          padding: '6px 0',
-          borderBottom: '1px solid rgba(127,127,127,0.2)',
-        }}
+        className={
+          ROW_GRID +
+          ' border-b border-border-medium px-1 py-2 text-xs uppercase tracking-wider text-text-secondary'
+        }
       >
         <div>Source</div>
-        <div style={{ textAlign: 'right' }}>Docs</div>
+        <div className="text-right">Docs</div>
         <div>Trend</div>
-        <div style={{ textAlign: 'right' }}>7d Δ</div>
-        <div></div>
+        <div className="text-right">7d Δ</div>
+        <div />
       </div>
       {data.sources.map((s) => {
         const href = externalLink(s.source_id);
-        const deltaColor = s.delta_7d > 0 ? '#1a7f37' : s.delta_7d < 0 ? '#c0392b' : '#888';
+        const deltaClass =
+          s.delta_7d > 0
+            ? 'text-emerald-600 dark:text-emerald-400'
+            : s.delta_7d < 0
+            ? 'text-red-600 dark:text-red-400'
+            : 'text-text-secondary';
         return (
           <div
             key={s.source_id}
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 90px 120px 70px 30px',
-              padding: '8px 0',
-              borderBottom: '1px solid rgba(127,127,127,0.12)',
-              fontSize: 12,
-              alignItems: 'center',
-            }}
+            className={ROW_GRID + ' border-b border-border-light px-1 py-2 text-sm'}
           >
-            <div>{s.source_id}</div>
-            <div style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+            <div className="text-text-primary">{s.source_id}</div>
+            <div className="text-right tabular-nums text-text-primary">
               {s.doc_count.toLocaleString()}
             </div>
             <div>
               <Sparkline points={s.sparkline} width={110} height={18} />
             </div>
-            <div
-              style={{
-                textAlign: 'right',
-                color: deltaColor,
-                fontVariantNumeric: 'tabular-nums',
-              }}
-            >
+            <div className={'text-right tabular-nums ' + deltaClass}>
               {s.delta_7d >= 0 ? '+' : ''}
               {s.delta_7d}
             </div>
@@ -88,7 +88,7 @@ const SourceBreakdown: React.FC<Props> = ({ context }) => {
                   href={href}
                   target="_blank"
                   rel="noreferrer"
-                  style={{ color: '#2563eb' }}
+                  className="text-blue-600 hover:underline dark:text-blue-400"
                 >
                   ↗
                 </a>

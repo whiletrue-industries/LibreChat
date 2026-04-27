@@ -19,21 +19,31 @@ const SourcesDashboard: React.FC = () => {
   const { data, isLoading, error } = useAdminSourcesQuery();
 
   if (isLoading) {
-    return <div style={{ padding: 24 }}>{localize('com_admin_sources_title')}…</div>;
+    return (
+      <main className="mx-auto max-w-6xl bg-surface-primary p-6 text-text-primary">
+        {localize('com_admin_sources_title')}…
+      </main>
+    );
   }
   if (error) {
-    return <div style={{ padding: 24, color: '#c0392b' }}>error loading sources</div>;
+    return (
+      <main className="mx-auto max-w-6xl bg-surface-primary p-6 text-red-600 dark:text-red-400">
+        error loading sources
+      </main>
+    );
   }
   const contexts = data?.contexts ?? [];
 
   if (contexts.length === 0) {
     return (
-      <div style={{ padding: 24 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 12 }}>
+      <main className="mx-auto max-w-6xl bg-surface-primary p-6 text-text-primary">
+        <h1 className="mb-4 text-xl font-semibold">
           {localize('com_admin_sources_title')}
-        </h2>
-        <p style={{ opacity: 0.7 }}>{localize('com_admin_sources_no_history')}</p>
-      </div>
+        </h1>
+        <p className="text-text-secondary">
+          {localize('com_admin_sources_no_history')}
+        </p>
+      </main>
     );
   }
 
@@ -47,7 +57,8 @@ const SourcesDashboard: React.FC = () => {
   const sortedByAge = contexts
     .slice()
     .sort(
-      (a, b) => new Date(a.last_synced_at).getTime() - new Date(b.last_synced_at).getTime(),
+      (a, b) =>
+        new Date(a.last_synced_at).getTime() - new Date(b.last_synced_at).getTime(),
     );
   const oldestTs = sortedByAge[0]?.last_synced_at;
   const newestTs = sortedByAge[sortedByAge.length - 1]?.last_synced_at;
@@ -55,18 +66,11 @@ const SourcesDashboard: React.FC = () => {
   const stalest = hasStalestGap ? sortedByAge[0] : null;
 
   return (
-    <div style={{ padding: 24 }}>
-      <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 12 }}>
+    <main className="mx-auto max-w-6xl bg-surface-primary p-6 text-text-primary">
+      <h1 className="mb-4 text-xl font-semibold">
         {localize('com_admin_sources_title')}
-      </h2>
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(4, 1fr)',
-          gap: 12,
-          marginBottom: 18,
-        }}
-      >
+      </h1>
+      <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label={localize('com_admin_sources_total_docs')}
           value={totalDocs.toLocaleString()}
@@ -88,30 +92,33 @@ const SourcesDashboard: React.FC = () => {
           sub={stalest?.context || ''}
         />
       </div>
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-        <thead>
-          <tr
-            style={{
-              fontSize: 11,
-              textTransform: 'uppercase',
-              letterSpacing: '0.6px',
-              opacity: 0.7,
-            }}
-          >
-            <th style={{ textAlign: 'left', padding: '8px 14px' }}>{localize('com_admin_sources_col_context')}</th>
-            <th style={{ textAlign: 'right', padding: '8px 14px' }}>{localize('com_admin_sources_col_docs')}</th>
-            <th style={{ textAlign: 'left', padding: '8px 14px' }}>{localize('com_admin_sources_col_trend')}</th>
-            <th style={{ textAlign: 'left', padding: '8px 14px' }}>{localize('com_admin_sources_col_last_sync')}</th>
-            <th style={{ width: 30 }}></th>
-          </tr>
-        </thead>
-        <tbody>
-          {contexts.map((c) => (
-            <SourceRow key={c.context} ctx={c} />
-          ))}
-        </tbody>
-      </table>
-    </div>
+      <div className="overflow-hidden rounded-lg border border-border-medium">
+        <table className="w-full border-collapse">
+          <thead>
+            <tr className="border-b border-border-medium bg-surface-primary-alt text-xs uppercase tracking-wider text-text-secondary">
+              <th className="px-4 py-2 text-left">
+                {localize('com_admin_sources_col_context')}
+              </th>
+              <th className="px-4 py-2 text-right">
+                {localize('com_admin_sources_col_docs')}
+              </th>
+              <th className="px-4 py-2 text-left">
+                {localize('com_admin_sources_col_trend')}
+              </th>
+              <th className="px-4 py-2 text-left">
+                {localize('com_admin_sources_col_last_sync')}
+              </th>
+              <th className="w-8" />
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border-light">
+            {contexts.map((c) => (
+              <SourceRow key={c.context} ctx={c} />
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </main>
   );
 };
 
