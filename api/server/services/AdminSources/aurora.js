@@ -79,4 +79,67 @@ async function getContextStats(bot, { pool = defaultPool() } = {}) {
   return result;
 }
 
-module.exports = { getContextStats };
+async function getSourceStats(bot, context, { pool = defaultPool() } = {}) {
+  const aggSql = `
+    SELECT snapshot_at, doc_count
+    FROM context_snapshots
+    WHERE bot = $1 AND context = $2 AND source_id = '*'
+    ORDER BY snapshot_at DESC
+    LIMIT $3
+  `;
+  const { rows: aggRows } = await pool.query(aggSql, [bot, context, SPARKLINE_WINDOW]);
+  if (aggRows.length === 0) {
+    return { context_summary: null, sources: [] };
+  }
+  const latestAgg = aggRows[0];
+
+  const srcSql = `
+    SELECT source_id, snapshot_at, doc_count
+    FROM context_snapshots
+    WHERE bot = $1 AND context = $2 AND source_id <> '*'
+    ORDER BY source_id, snapshot_at DESC
+  `;
+  const { rows: srcRows } = await pool.query(srcSql, [bot, context]);
+
+  const grouped = new Map();
+  for (const row of srcRows) {
+    const list = grouped.get(row.source_id) || [];
+    list.push(row);
+    grouped.set(row.source_id, list);
+  }
+
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000);
+  const sources = [];
+  for (const [source_id, list] of grouped) {
+    list.sort((a, b) => new Date(a.snapshot_at) - new Date(b.snapshot_at));
+    const sparkline = list.slice(-SPARKLINE_WINDOW).map((r) => ({
+      at: r.snapshot_at.toISOString ? r.snapshot_at.toISOString() : r.snapshot_at,
+      count: r.doc_count,
+    }));
+    const current = list[list.length - 1];
+    const baseline = list.find((r) => new Date(r.snapshot_at) <= sevenDaysAgo)
+      || list[0];
+    sources.push({
+      source_id,
+      doc_count: current.doc_count,
+      sparkline,
+      delta_7d: current.doc_count - baseline.doc_count,
+    });
+  }
+  sources.sort((a, b) => b.doc_count - a.doc_count);
+
+  return {
+    context_summary: {
+      context,
+      doc_count: latestAgg.doc_count,
+      last_synced_at: latestAgg.snapshot_at,
+      sparkline: aggRows.slice().reverse().map((r) => ({
+        at: r.snapshot_at.toISOString ? r.snapshot_at.toISOString() : r.snapshot_at,
+        count: r.doc_count,
+      })),
+    },
+    sources,
+  };
+}
+
+module.exports = { getContextStats, getSourceStats };
