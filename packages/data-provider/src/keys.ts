@@ -74,6 +74,9 @@ export enum QueryKeys {
   adminPromptsVersions = 'adminPromptsVersions',
   adminPromptTestQuestions = 'adminPromptTestQuestions',
   adminPromptVersionUsage = 'adminPromptVersionUsage',
+  /* Admin Sources */
+  adminSources = 'adminSources',
+  adminSource = 'adminSource',
 }
 
 // Dynamic query keys that require parameters

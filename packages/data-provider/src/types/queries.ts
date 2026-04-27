@@ -433,3 +433,42 @@ export interface AdminPromptUsage {
   conversationCount: number;
   conversations: AdminPromptUsageConversation[];
 }
+
+/* --- Admin Sources --- */
+export interface SparklinePoint {
+  at: string;
+  count: number;
+}
+
+export interface AdminSourcesContext {
+  context: string;
+  doc_count: number;
+  prev_count: number | null;
+  sparkline: SparklinePoint[];
+  last_synced_at: string;
+  source_count: number;
+  drift_alert: boolean;
+}
+
+export interface AdminSourcesResponse {
+  contexts: AdminSourcesContext[];
+}
+
+export interface AdminSourceItem {
+  source_id: string;
+  doc_count: number;
+  sparkline: SparklinePoint[];
+  delta_7d: number;
+}
+
+export interface AdminSourceContextSummary {
+  context: string;
+  doc_count: number;
+  last_synced_at: string;
+  sparkline: SparklinePoint[];
+}
+
+export interface AdminSourceResponse {
+  context_summary: AdminSourceContextSummary | null;
+  sources: AdminSourceItem[];
+}

@@ -487,3 +487,9 @@ export const adminPromptsVersionUsage = (
   limit = 50,
 ): string =>
   `${BASE_URL}/api/admin/prompts/${encodeURIComponent(agentType)}/sections/${encodeURIComponent(sectionKey)}/versions/${encodeURIComponent(versionId)}/usage?limit=${limit}`;
+
+/* --- Admin Sources --- */
+export const adminSources = (): string => `${BASE_URL}/api/admin/sources`;
+
+export const adminSource = (context: string): string =>
+  `${BASE_URL}/api/admin/sources/${encodeURIComponent(context)}`;
