@@ -98,10 +98,10 @@ const SourcesDashboard: React.FC = () => {
               opacity: 0.7,
             }}
           >
-            <th style={{ textAlign: 'left', padding: '8px 14px' }}>Context</th>
-            <th style={{ textAlign: 'right', padding: '8px 14px' }}>Docs</th>
-            <th style={{ textAlign: 'left', padding: '8px 14px' }}>Trend</th>
-            <th style={{ textAlign: 'left', padding: '8px 14px' }}>Last sync</th>
+            <th style={{ textAlign: 'left', padding: '8px 14px' }}>{localize('com_admin_sources_col_context')}</th>
+            <th style={{ textAlign: 'right', padding: '8px 14px' }}>{localize('com_admin_sources_col_docs')}</th>
+            <th style={{ textAlign: 'left', padding: '8px 14px' }}>{localize('com_admin_sources_col_trend')}</th>
+            <th style={{ textAlign: 'left', padding: '8px 14px' }}>{localize('com_admin_sources_col_last_sync')}</th>
             <th style={{ width: 30 }}></th>
           </tr>
         </thead>

@@ -11,6 +11,7 @@ import {
   PromptEditor,
   PromptSectionList,
 } from '~/components/Admin/Prompts';
+import { SourcesDashboard } from '~/components/Admin/Sources';
 import DashboardRoute from './Layouts/Dashboard';
 
 const dashboardRoutes = {
@@ -93,6 +94,10 @@ const dashboardRoutes = {
     {
       path: 'agent-prompts/:agent/:key',
       element: <PromptEditor />,
+    },
+    {
+      path: 'sources',
+      element: <SourcesDashboard />,
     },
     {
       path: '*',

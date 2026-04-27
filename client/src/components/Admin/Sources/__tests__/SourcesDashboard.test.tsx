@@ -19,6 +19,10 @@ jest.mock('~/hooks', () => ({
       com_admin_sources_drift_alerts: 'Drift alerts',
       com_admin_sources_stalest: 'Stalest context',
       com_admin_sources_no_history: 'Awaiting first snapshot',
+      com_admin_sources_col_context: 'Context',
+      com_admin_sources_col_docs: 'Docs',
+      com_admin_sources_col_trend: 'Trend',
+      com_admin_sources_col_last_sync: 'Last sync',
     }[key] ?? key),
 }));
 
