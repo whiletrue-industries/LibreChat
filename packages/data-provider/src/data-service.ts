@@ -1187,3 +1187,12 @@ export function getAdminPromptVersionUsage(
     endpoints.adminPromptsVersionUsage(agentType, sectionKey, versionId, limit),
   );
 }
+
+/* --- Admin Sources --- */
+export function getAdminSources(): Promise<q.AdminSourcesResponse> {
+  return request.get(endpoints.adminSources());
+}
+
+export function getAdminSource(context: string): Promise<q.AdminSourceResponse> {
+  return request.get(endpoints.adminSource(context));
+}
