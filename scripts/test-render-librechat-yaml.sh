@@ -17,8 +17,13 @@ trap 'rm -rf "$WORK"' EXIT
 cp "$TPL" "$WORK/librechat.yaml.tpl"
 
 run_entrypoint() {
+  # BOTNIM_SKIP_AGENT_LOOKUP=1 forces the entrypoint to skip its
+  # Mongo-by-name lookup so the test harness stays hermetic — we don't
+  # want a stray MONGO_URI in the dev shell to make tests query a real
+  # database. The lookup itself is exercised separately in test 6.
   TPL_PATH="$WORK/librechat.yaml.tpl" OUT_PATH="$WORK/librechat.yaml" \
     BOTNIM_AGENT_ID_UNIFIED="${1-}" \
+    BOTNIM_SKIP_AGENT_LOOKUP=1 \
     "$ENTRYPOINT" /usr/bin/true
 }
 
@@ -42,6 +47,7 @@ echo "PASS: fallback strip"
 # Test 3: env var unset (not just empty) → same fallback behaviour
 unset BOTNIM_AGENT_ID_UNIFIED || true
 TPL_PATH="$WORK/librechat.yaml.tpl" OUT_PATH="$WORK/librechat.yaml" \
+  BOTNIM_SKIP_AGENT_LOOKUP=1 \
   "$ENTRYPOINT" /usr/bin/true
 grep -q '^modelSpecs:' "$WORK/librechat.yaml" && \
   { echo "FAIL: unset var should also strip modelSpecs"; exit 1; }
@@ -55,6 +61,7 @@ echo "PASS: yaml parses"
 # Test 5: real template renders and parses
 TPL_PATH="$(pwd)/librechat.yaml.tpl" OUT_PATH="$WORK/real-rendered.yaml" \
   BOTNIM_AGENT_ID_UNIFIED="agent_real_smoke" \
+  BOTNIM_SKIP_AGENT_LOOKUP=1 \
   "$ENTRYPOINT" /usr/bin/true
 python3 -c "
 import yaml,sys
@@ -67,6 +74,18 @@ assert d['interface']['modelSelect'] is False, 'modelSelect must be false'
 print('schema asserts ok')
 "
 echo "PASS: real template"
+
+# Test 6: skip-flag with no env var and no MONGO_URI → still strips
+# (i.e., the lookup gate is purely conditional on MONGO_URI being set).
+unset BOTNIM_AGENT_ID_UNIFIED MONGO_URI || true
+TPL_PATH="$WORK/librechat.yaml.tpl" OUT_PATH="$WORK/librechat.yaml" \
+  "$ENTRYPOINT" /usr/bin/true 2>"$WORK/stderr"
+if grep -q '^modelSpecs:' "$WORK/librechat.yaml"; then
+  echo "FAIL: no env + no Mongo should still strip"; exit 1
+fi
+grep -q "WARNING.*modelSpecs stripped" "$WORK/stderr" \
+  || { echo "FAIL: WARNING log missing on strip path"; cat "$WORK/stderr"; exit 1; }
+echo "PASS: no-env-no-mongo strips with WARNING"
 
 echo
 echo "ALL TESTS PASSED"
