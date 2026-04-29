@@ -52,5 +52,21 @@ python3 -c "import yaml,sys; yaml.safe_load(open('$WORK/librechat.yaml'))" \
   || { echo "FAIL: rendered yaml is not parseable"; exit 1; }
 echo "PASS: yaml parses"
 
+# Test 5: real template renders and parses
+TPL_PATH="$(pwd)/librechat.yaml.tpl" OUT_PATH="$WORK/real-rendered.yaml" \
+  BOTNIM_AGENT_ID_UNIFIED="agent_real_smoke" \
+  "$ENTRYPOINT" /usr/bin/true
+python3 -c "
+import yaml,sys
+d = yaml.safe_load(open('$WORK/real-rendered.yaml'))
+assert d['modelSpecs']['enforce'] is True, 'enforce must be true'
+assert d['modelSpecs']['list'][0]['default'] is True, 'default must be true'
+assert d['modelSpecs']['list'][0]['preset']['agent_id'] == 'agent_real_smoke'
+assert d['interface']['endpointsMenu'] is False, 'endpointsMenu must be false'
+assert d['interface']['modelSelect'] is False, 'modelSelect must be false'
+print('schema asserts ok')
+"
+echo "PASS: real template"
+
 echo
 echo "ALL TESTS PASSED"
