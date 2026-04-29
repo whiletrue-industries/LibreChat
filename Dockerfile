@@ -6,6 +6,7 @@ FROM node:20-alpine AS node
 RUN apk upgrade --no-cache
 RUN apk add --no-cache jemalloc
 RUN apk add --no-cache python3 py3-pip uv
+RUN apk add --no-cache gettext
 
 # Set environment variable to use jemalloc
 ENV LD_PRELOAD=/usr/lib/libjemalloc.so.2
@@ -50,6 +51,9 @@ RUN \
 # Node API setup
 EXPOSE 3080
 ENV HOST=0.0.0.0
+COPY --chown=node:node docker-entrypoint-render.sh /usr/local/bin/docker-entrypoint-render.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint-render.sh
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint-render.sh"]
 CMD ["npm", "run", "backend"]
 
 # Optional: for client with nginx routing
