@@ -50,3 +50,14 @@ variable "botnim_api_url" {
   type        = string
   default     = null
 }
+
+# Admin prompt-management UI wiring + librechat.yaml modelSpecs default-agent
+# substitution. Empty string means "no live agent configured" — the entrypoint
+# strips modelSpecs and the bot will not be auto-selected. Set to the seeded
+# prod agent's id (e.g., "agent_xxxxxxxxxxxxxxxxxxxxx") via terragrunt input
+# once prod is bootstrapped.
+variable "botnim_agent_id_unified" {
+  description = "LibreChat agent ID for the unified (production) Botnim bot. Read by api/server/index.js into app.locals.liveAgentIds.unified, and by docker-entrypoint-render.sh for modelSpecs.list[0].preset.agent_id."
+  type        = string
+  default     = ""
+}
