@@ -8,6 +8,10 @@ COPY scripts /app/scripts
 COPY packages/api/dist /app/packages/api/dist
 COPY packages/data-schemas/dist /app/packages/data-schemas/dist
 COPY packages/data-provider/dist /app/packages/data-provider/dist
-COPY librechat.yaml /app/librechat.yaml
+COPY librechat.yaml.tpl /app/librechat.yaml.tpl
+COPY docker-entrypoint-render.sh /usr/local/bin/docker-entrypoint-render.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint-render.sh \
+ && (command -v envsubst >/dev/null || apk add --no-cache gettext)
 RUN chmod -R a+rwX /app/client/dist
 RUN sh -c 'set -e; for f in /app/client/dist/assets/locales.*.js; do sed -i "s/com_ui_privacy_policy:\"Privacy policy\"/com_ui_privacy_policy:\"מדיניות הפרטיות\"/; s/com_ui_terms_of_service:\"Terms of service\"/com_ui_terms_of_service:\"תנאי השימוש באתר\"/" "$f"; rm -f "$f.br" "$f.gz"; gzip -9 -k "$f"; done'
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint-render.sh"]
