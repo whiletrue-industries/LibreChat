@@ -14,9 +14,12 @@ inputs = {
   # known-good tag — bump only when stabilizing on a new baseline.
   image_tag = get_env("IMAGE_TAG", "v0.8.4-botnim-split-v1")
 
-  # LibreChat agent ID for the unified Botnim bot, created by
-  # scripts/seed-botnim-agent.js. Read by api/server/index.js into
-  # app.locals.liveAgentIds.unified for the admin prompt-management
-  # publish flow.
-  botnim_agent_id_unified = "agent_2VTUzZmlh8wzHIpq8GEa9"
+  # LibreChat agent ID for the unified Botnim bot.
+  #
+  # Empty by design — docker-entrypoint-render.sh discovers the id at
+  # container start by looking up the agent by name in MongoDB. The
+  # seed script reuses agents by name on every run, so the (name → id)
+  # mapping is the actual source of truth and survives re-seeding.
+  # Set this only to override the lookup for emergency rollback.
+  botnim_agent_id_unified = ""
 }

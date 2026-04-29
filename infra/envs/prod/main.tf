@@ -68,6 +68,8 @@ module "librechat" {
     CREATE_BOOTSTRAP_USER = "true"
     BOOTSTRAP_USER_EMAIL  = "botnim.prod@build-up.team"
     BOOTSTRAP_USER_NAME   = "Botnim Prod"
+
+    BOTNIM_AGENT_ID_UNIFIED = var.botnim_agent_id_unified
   }
 
   enable_aurora_access = true

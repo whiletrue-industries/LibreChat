@@ -125,8 +125,14 @@ export default function ModelSelector({ startupConfig }: ModelSelectorProps) {
   const interfaceConfig = startupConfig?.interface ?? getConfigDefaults().interface;
   const modelSpecs = startupConfig?.modelSpecs?.list ?? [];
 
-  // Hide the selector when modelSelect is false and there are no model specs to show
-  if (interfaceConfig.modelSelect === false && modelSpecs.length === 0) {
+  // Hide the selector when modelSelect is false AND there is nothing meaningful
+  // to choose between: either no specs at all, or a single enforced spec (the
+  // user cannot pick anything else, so a one-item menu is just visual noise).
+  const enforced = startupConfig?.modelSpecs?.enforce === true;
+  if (
+    interfaceConfig.modelSelect === false &&
+    (modelSpecs.length === 0 || (enforced && modelSpecs.length === 1))
+  ) {
     return null;
   }
 
