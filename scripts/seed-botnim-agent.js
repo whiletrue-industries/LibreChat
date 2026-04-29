@@ -30,6 +30,7 @@
 const fs = require('fs');
 const path = require('path');
 const yaml = require('js-yaml');
+const mongoose = require('mongoose');
 
 const { openapiToFunction, validateAndParseOpenAPISpec } =
   require('librechat-data-provider');
@@ -225,6 +226,49 @@ async function upsertAction(token, agentId, spec) {
   });
 }
 
+// Share the agent globally by linking it to LibreChat's `instance` project
+// (Constants.GLOBAL_PROJECT_NAME). Agents in that project are visible to
+// every authenticated user — both existing and any future signups —
+// without per-user grants.
+//
+// Idempotent: $addToSet on both sides means re-runs are no-ops once the
+// link is in place. Direct Mongo update because LibreChat does not expose
+// a /api/projects route, so we can't do this via HTTP.
+async function shareAgentWithGlobalProject(agentId) {
+  const mongoUri = process.env.MONGO_URI;
+  if (!mongoUri) {
+    console.warn('[seed] MONGO_URI not set — skipping global share step');
+    return;
+  }
+  await mongoose.connect(mongoUri);
+  try {
+    const db = mongoose.connection.db;
+    const project = await db.collection('projects').findOne({ name: 'instance' });
+    if (!project) {
+      console.warn('[seed] no `instance` project found — skipping global share');
+      return;
+    }
+    const agent = await db.collection('agents').findOne({ id: agentId });
+    if (!agent) {
+      throw new Error(`agent ${agentId} not found in DB`);
+    }
+    const projectUpdate = await db.collection('projects').updateOne(
+      { _id: project._id },
+      { $addToSet: { agentIds: agent.id } },
+    );
+    const agentUpdate = await db.collection('agents').updateOne(
+      { _id: agent._id },
+      { $addToSet: { projectIds: project._id } },
+    );
+    console.log(
+      `[seed] global share: project_modified=${projectUpdate.modifiedCount} ` +
+        `agent_modified=${agentUpdate.modifiedCount} (0 means already linked)`,
+    );
+  } finally {
+    await mongoose.disconnect();
+  }
+}
+
 async function main() {
   console.log(`[seed] login ${EMAIL} → ${API}`);
   const token = await login();
@@ -245,6 +289,13 @@ async function main() {
       console.error(`[seed] action ${spec.name} FAILED: ${err.message}`);
       process.exitCode = 1;
     }
+  }
+
+  try {
+    await shareAgentWithGlobalProject(agent.id);
+  } catch (err) {
+    console.error(`[seed] global share FAILED: ${err.message}`);
+    process.exitCode = 1;
   }
 
   console.log(`[seed] done.`);
