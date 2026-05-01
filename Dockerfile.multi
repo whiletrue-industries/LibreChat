@@ -78,6 +78,7 @@ WORKDIR /app
 RUN npm ci --omit=dev
 COPY api ./api
 COPY config ./config
+COPY scripts ./scripts
 COPY --from=data-provider-build /app/packages/data-provider/dist ./packages/data-provider/dist
 COPY --from=data-schemas-build /app/packages/data-schemas/dist ./packages/data-schemas/dist
 COPY --from=api-package-build /app/packages/api/dist ./packages/api/dist
@@ -85,6 +86,14 @@ COPY --from=client-build /app/client/dist ./client/dist
 COPY librechat.yaml.tpl /app/librechat.yaml.tpl
 COPY docker-entrypoint-render.sh /usr/local/bin/docker-entrypoint-render.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint-render.sh
+# Cross-repo specs from rebuilding-bots/specs/openapi/. The deploy script
+# (parlibot/deploy.sh) populates LibreChat/specs/ from the sibling
+# rebuilding-bots/ checkout right before invoking docker build, so this
+# COPY succeeds at build time without LibreChat needing to know about the
+# rebuilding-bots layout. seed-botnim-agent.js reads SEED_SPECS_DIR (default
+# /srv/specs) from this baked-in copy. The ./specs path is .gitignored so
+# it doesn't pollute the LibreChat working tree.
+COPY specs /srv/specs
 WORKDIR /app/api
 EXPOSE 3080
 ENV HOST=0.0.0.0

@@ -1,5 +1,10 @@
 ### node etc ###
 
+# Cross-repo specs copied in by parlibot/deploy.sh right before
+# `docker build` so the api-build stage can `COPY specs /srv/specs`.
+# Build-time only; not part of the LibreChat source tree.
+/specs/
+
 # Logs
 data-node
 meili_data*
