@@ -70,6 +70,10 @@ module "librechat" {
     BOOTSTRAP_USER_NAME   = "Botnim Prod"
 
     BOTNIM_AGENT_ID_UNIFIED = var.botnim_agent_id_unified
+
+    # Hide the "Help & FAQ" entry from the account-settings menu.
+    # See staging main.tf for rationale. Closes Monday item 2881679817.
+    HELP_AND_FAQ_URL = "/"
   }
 
   enable_aurora_access = true
