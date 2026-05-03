@@ -20,7 +20,7 @@ const SourcesDashboard: React.FC = () => {
 
   if (isLoading) {
     return (
-      <main className="mx-auto max-w-6xl bg-surface-primary p-6 text-text-primary">
+      <main className="mx-auto w-full max-w-7xl bg-surface-primary p-6 text-text-primary" dir="ltr">
         {localize('com_admin_sources_title')}…
       </main>
     );
@@ -36,7 +36,7 @@ const SourcesDashboard: React.FC = () => {
 
   if (contexts.length === 0) {
     return (
-      <main className="mx-auto max-w-6xl bg-surface-primary p-6 text-text-primary">
+      <main className="mx-auto w-full max-w-7xl bg-surface-primary p-6 text-text-primary" dir="ltr">
         <h1 className="mb-4 text-xl font-semibold">
           {localize('com_admin_sources_title')}
         </h1>
@@ -66,7 +66,7 @@ const SourcesDashboard: React.FC = () => {
   const stalest = hasStalestGap ? sortedByAge[0] : null;
 
   return (
-    <main className="mx-auto max-w-6xl bg-surface-primary p-6 text-text-primary">
+    <main className="mx-auto w-full max-w-7xl bg-surface-primary p-6 text-text-primary" dir="ltr">
       <h1 className="mb-4 text-xl font-semibold">
         {localize('com_admin_sources_title')}
       </h1>

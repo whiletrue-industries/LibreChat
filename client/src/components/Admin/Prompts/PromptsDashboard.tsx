@@ -26,7 +26,7 @@ export default function PromptsDashboard() {
   }
 
   return (
-    <main className="mx-auto max-w-6xl bg-surface-primary p-6 text-text-primary">
+    <main className="mx-auto w-full max-w-7xl bg-surface-primary p-6 text-text-primary" dir="ltr">
       <h1 className="mb-4 text-xl font-semibold">
         {localize('com_admin_prompts_title')}
       </h1>
