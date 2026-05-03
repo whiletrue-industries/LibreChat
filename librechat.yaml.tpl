@@ -16,7 +16,10 @@ interface:
   endpointsMenu: false
   modelSelect: false
   parameters: true
-  sidePanel: true
+  # Hide the right-side panel (agent builder, memories, attach files,
+  # MCP settings). Botnim is a single-purpose chat product; the panel
+  # surfaces self-service flows that aren't useful for our users.
+  sidePanel: false
   presets: false
   prompts:
     use: false

@@ -9,7 +9,6 @@ import ModelSelector from './Menus/Endpoints/ModelSelector';
 import { useGetStartupConfig } from '~/data-provider';
 import ExportAndShareMenu from './ExportAndShareMenu';
 import BookmarkMenu from './Menus/BookmarkMenu';
-import { TemporaryChat } from './TemporaryChat';
 import AddMultiConvo from './AddMultiConvo';
 import { useHasAccess } from '~/hooks';
 import { cn } from '~/utils';
@@ -32,11 +31,6 @@ function Header() {
 
   const hasAccessToMultiConvo = useHasAccess({
     permissionType: PermissionTypes.MULTI_CONVO,
-    permission: Permissions.USE,
-  });
-
-  const hasAccessToTemporaryChat = useHasAccess({
-    permissionType: PermissionTypes.TEMPORARY_CHAT,
     permission: Permissions.USE,
   });
 
@@ -74,12 +68,9 @@ function Header() {
               {hasAccessToBookmarks === true && <BookmarkMenu />}
               {hasAccessToMultiConvo === true && <AddMultiConvo />}
               {isSmallScreen && (
-                <>
-                  <ExportAndShareMenu
-                    isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false}
-                  />
-                  {hasAccessToTemporaryChat === true && <TemporaryChat />}
-                </>
+                <ExportAndShareMenu
+                  isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false}
+                />
               )}
             </div>
           )}
@@ -90,7 +81,6 @@ function Header() {
             <ExportAndShareMenu
               isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false}
             />
-            {hasAccessToTemporaryChat === true && <TemporaryChat />}
           </div>
         )}
       </div>
