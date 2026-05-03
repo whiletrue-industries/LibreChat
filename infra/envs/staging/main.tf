@@ -118,6 +118,14 @@ module "librechat_api" {
     CREATE_BOOTSTRAP_USER = "true"
 
     BOTNIM_AGENT_ID_UNIFIED = var.botnim_agent_id_unified
+
+    # Hide the "Help & FAQ" entry from the account-settings menu.
+    # LibreChat's frontend skips rendering that entry when the URL is "/"
+    # (see client/src/components/Nav/AccountSettings.tsx). The default
+    # `https://librechat.ai` points users at the upstream open-source
+    # docs, which is wrong for the בוט-נים deployment. Closes Monday
+    # item 2881679817.
+    HELP_AND_FAQ_URL = "/"
   }
 
   secret_environment_variables = merge(
