@@ -54,7 +54,10 @@ const localStorageAtoms = {
 
   speechToText: atomWithLocalStorage('speechToText', true),
   engineSTT: atomWithLocalStorage('engineSTT', 'browser'),
-  languageSTT: atomWithLocalStorage('languageSTT', ''),
+  // Default to Hebrew on first open of Settings → Speech (botnim is a
+  // Hebrew-first product). Existing user choices are preserved via
+  // localStorage. Monday item 2881759582.
+  languageSTT: atomWithLocalStorage('languageSTT', 'he'),
   autoTranscribeAudio: atomWithLocalStorage('autoTranscribeAudio', false),
   decibelValue: atomWithLocalStorage('decibelValue', -45),
   autoSendText: atomWithLocalStorage('autoSendText', -1),
@@ -63,7 +66,8 @@ const localStorageAtoms = {
   engineTTS: atomWithLocalStorage('engineTTS', 'browser'),
   voice: atomWithLocalStorage<string | undefined>('voice', undefined),
   cloudBrowserVoices: atomWithLocalStorage('cloudBrowserVoices', false),
-  languageTTS: atomWithLocalStorage('languageTTS', ''),
+  // Same Hebrew-first default rationale as languageSTT above.
+  languageTTS: atomWithLocalStorage('languageTTS', 'he'),
   automaticPlayback: atomWithLocalStorage('automaticPlayback', false),
   playbackRate: atomWithLocalStorage<number | null>('playbackRate', null),
   cacheTTS: atomWithLocalStorage('cacheTTS', true),

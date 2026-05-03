@@ -85,7 +85,10 @@ export default function PromptEditor() {
   };
 
   return (
-    <main className="mx-auto max-w-6xl bg-surface-primary p-6 text-text-primary">
+    <main
+      className="mx-auto w-full max-w-7xl bg-surface-primary p-6 text-text-primary"
+      dir="ltr"
+    >
       <div className="mb-4 flex items-center justify-between">
         <h1 className="text-xl font-semibold">
           <span className="font-mono text-base">{key}</span>
@@ -106,9 +109,10 @@ export default function PromptEditor() {
         </div>
       )}
 
-      <div className="rounded border border-border-medium">
+      <div className="w-full overflow-hidden rounded border border-border-medium">
         <Editor
-          height="45vh"
+          width="100%"
+          height="65vh"
           language="markdown"
           theme="vs"
           value={body}

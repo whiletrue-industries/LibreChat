@@ -95,11 +95,23 @@ i18n
   .use(LanguageDetector)
   .use(initReactI18next)
   .init({
+    // Hebrew-first default. We honour an explicit user choice (saved to
+    // localStorage when the user picks a language in Settings → General),
+    // so the detection order below puts localStorage first and skips
+    // navigator entirely — without that skip, an English-locale browser
+    // would land on English even though we want Hebrew as the product
+    // default. The fallbackLng.default is also `he` so that any
+    // detected-but-unloaded language collapses to Hebrew rather than
+    // English. Closes Monday item 2881759582.
+    detection: {
+      order: ['localStorage', 'cookie', 'htmlTag'],
+      caches: ['localStorage'],
+    },
     fallbackLng: {
-      'zh-TW': ['zh-Hant', 'en'],
-      'zh-HK': ['zh-Hant', 'en'],
-      zh: ['zh-Hans', 'en'],
-      default: ['en'],
+      'zh-TW': ['zh-Hant', 'he'],
+      'zh-HK': ['zh-Hant', 'he'],
+      zh: ['zh-Hans', 'he'],
+      default: ['he'],
     },
     fallbackNS: 'translation',
     ns: ['translation'],

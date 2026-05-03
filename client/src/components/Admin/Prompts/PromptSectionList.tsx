@@ -32,7 +32,7 @@ export default function PromptSectionList() {
   const rows = sections.data.sections;
 
   return (
-    <main className="mx-auto max-w-6xl bg-surface-primary p-6 text-text-primary">
+    <main className="mx-auto w-full max-w-7xl bg-surface-primary p-6 text-text-primary" dir="ltr">
       <div className="mb-4 flex items-center justify-between">
         <h1 className="text-xl font-semibold">
           {localize(`com_admin_prompts_agent_${agent}` as LocalizeKey)}

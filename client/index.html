@@ -31,7 +31,13 @@
           storedLang = null;
         }
         if (storedLang == null || storedLang === '') {
-          storedLang = (typeof navigator !== 'undefined' && (navigator.language || (navigator.languages && navigator.languages[0]))) || 'en-US';
+          // botnim default: Hebrew. We deliberately ignore the browser
+          // navigator.language for new users — this is a Hebrew-first
+          // product and most users would land on the wrong direction
+          // otherwise. Users who set Settings → General → Language to
+          // anything else get their choice persisted in localStorage,
+          // which takes precedence above. Closes Monday item 2881759582.
+          storedLang = 'he-IL';
         }
         storedLang = storedLang.replace(/^"|"$/g, '');
         var primary = (storedLang.split('-')[0] || storedLang).toLowerCase();
