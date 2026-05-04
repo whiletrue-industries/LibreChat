@@ -70,7 +70,7 @@ resource "aws_secretsmanager_secret_version" "mongo_uri" {
 ################################################################################
 
 module "librechat_api" {
-  source = "git::https://github.com/Build-Up-IL/org-infra.git//modules/app?ref=feat/app-tcp-protocol"
+  source = "git::https://github.com/Build-Up-IL/org-infra.git//modules/app?ref=648976c"
 
   app_name       = "librechat"
   container_port = 3080
@@ -165,7 +165,7 @@ module "librechat_api" {
 ################################################################################
 
 module "librechat_mongo" {
-  source = "git::https://github.com/Build-Up-IL/org-infra.git//modules/app?ref=feat/app-tcp-protocol"
+  source = "git::https://github.com/Build-Up-IL/org-infra.git//modules/app?ref=648976c"
 
   app_name       = "librechat-mongo"
   service_name   = "librechat-${var.environment}-mongo"
@@ -249,7 +249,7 @@ module "librechat_mongo" {
 ################################################################################
 
 module "librechat_meili" {
-  source = "git::https://github.com/Build-Up-IL/org-infra.git//modules/app?ref=feat/app-tcp-protocol"
+  source = "git::https://github.com/Build-Up-IL/org-infra.git//modules/app?ref=648976c"
 
   app_name       = "librechat-meili"
   service_name   = "librechat-${var.environment}-meili"
