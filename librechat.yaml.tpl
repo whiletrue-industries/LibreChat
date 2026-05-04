@@ -58,6 +58,7 @@ actions:
     - staging.botnim.co.il
     - botnim.co.il
     - botnim.staging.build-up.team
+    - botnim.build-up.team
     - botnim_api
     # ECS Service Connect alias (note hyphen, not underscore — Service
     # Connect normalizes service names to use the same form as the
