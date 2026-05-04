@@ -9,6 +9,12 @@ terraform {
 inputs = {
   environment = "prod"
 
+  # Listener rule priority on the shared prod ALB. Priorities 100 / 200 / 300
+  # / 310 are claimed by tigburzfoni / safegan / checkup / checkup-staging.
+  # 410 sits right behind botnim-api at 400 so /botnim/* hits botnim-api
+  # before LibreChat's /* catch-all gets a chance.
+  listener_priority = 410
+
   # LibreChat agent ID for the unified Botnim bot, created by
   # scripts/seed-botnim-agent.js. Read by api/server/index.js into
   # app.locals.liveAgentIds.unified for the admin prompt-management
