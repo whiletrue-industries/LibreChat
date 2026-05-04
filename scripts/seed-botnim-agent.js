@@ -88,6 +88,21 @@ async function listAgents(token) {
   return body.data || [];
 }
 
+async function listAgentActions(token, agentId) {
+  // GET /api/agents/actions returns every action across all agents the
+  // caller can edit. Filter to just our agent. Returns Action documents
+  // (each with action_id, metadata.domain, etc.).
+  const all = await httpJson('GET', `${API}/api/agents/actions`, { token });
+  return (Array.isArray(all) ? all : []).filter((a) => a.agent_id === agentId);
+}
+
+async function deleteAgentAction(token, agentId, actionId) {
+  // DELETE /api/agents/actions/{agentId}/{actionId} removes the action
+  // doc AND prunes the agent's `actions[]` + `tools[]` arrays. Idempotent
+  // on a re-run that finds nothing to delete.
+  return await httpJson('DELETE', `${API}/api/agents/actions/${agentId}/${actionId}`, { token });
+}
+
 function rowToMongoose(row) {
   if (!row) return row;
   return {
@@ -278,6 +293,32 @@ async function main() {
   const existing = agents.find((a) => a.name === AGENT_NAME);
   const agent = await ensureAgent(token, existing);
   console.log(`[seed] agent id=${agent.id}`);
+
+  // Wipe pre-existing actions before re-creating. POST /api/agents/actions
+  // is append-only — it creates a NEW action doc each call and pushes a new
+  // entry onto agent.actions/agent.tools. Without this cleanup, every deploy
+  // adds 21 (17+3+1) duplicate function entries; after ~6 deploys we cross
+  // the 128-tool limit OpenAI's Responses API enforces and the bot 400s on
+  // every chat. We delete-then-create on every seed run so the agent ends
+  // each deploy with exactly N_actions × N_functions tools.
+  let existingActions = [];
+  try {
+    existingActions = await listAgentActions(token, agent.id);
+  } catch (err) {
+    console.error(`[seed] listAgentActions FAILED (continuing without cleanup): ${err.message}`);
+  }
+  if (existingActions.length > 0) {
+    console.log(`[seed] deleting ${existingActions.length} pre-existing action(s) before re-create`);
+    for (const action of existingActions) {
+      try {
+        await deleteAgentAction(token, agent.id, action.action_id);
+      } catch (err) {
+        console.error(
+          `[seed] deleteAgentAction(${action.action_id}) FAILED (continuing): ${err.message}`,
+        );
+      }
+    }
+  }
 
   const specs = loadOpenApiSpecs();
   console.log(`[seed] found ${specs.length} OpenAPI spec(s): ${specs.map((s) => s.name).join(', ')}`);
