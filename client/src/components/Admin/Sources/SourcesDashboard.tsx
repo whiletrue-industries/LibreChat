@@ -1,6 +1,7 @@
 import React from 'react';
 import { useAdminSourcesQuery } from '~/data-provider';
 import { useLocalize } from '~/hooks';
+import RefreshPanel from './RefreshPanel';
 import SourceRow from './SourceRow';
 import StatCard from './StatCard';
 
@@ -70,6 +71,7 @@ const SourcesDashboard: React.FC = () => {
       <h1 className="mb-4 text-xl font-semibold">
         {localize('com_admin_sources_title')}
       </h1>
+      <RefreshPanel />
       <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label={localize('com_admin_sources_total_docs')}

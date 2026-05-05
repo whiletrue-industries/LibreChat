@@ -1196,3 +1196,12 @@ export function getAdminSources(): Promise<q.AdminSourcesResponse> {
 export function getAdminSource(context: string): Promise<q.AdminSourceResponse> {
   return request.get(endpoints.adminSource(context));
 }
+
+/* --- Admin Refresh --- */
+export function triggerAdminRefresh(): Promise<q.AdminRefreshAckResponse> {
+  return request.post(endpoints.adminRefresh(), {});
+}
+
+export function getAdminRefreshStatus(): Promise<q.AdminRefreshStatusResponse> {
+  return request.get(endpoints.adminRefreshStatus());
+}

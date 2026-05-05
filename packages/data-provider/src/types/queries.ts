@@ -472,3 +472,38 @@ export interface AdminSourceResponse {
   context_summary: AdminSourceContextSummary | null;
   sources: AdminSourceItem[];
 }
+
+export interface AdminRefreshAckResponse {
+  status: string;
+}
+
+export type AdminRefreshRunStatus = 'idle' | 'running' | 'done' | 'failed';
+
+export interface AdminRefreshContextResult {
+  bot: string;
+  context: string;
+  status: 'ok' | 'failed';
+  started_at: string;
+  finished_at: string;
+  error_type: string | null;
+  error_message: string | null;
+}
+
+export interface AdminRefreshCurrent {
+  bot: string | null;
+  context: string | null;
+  started_at: string | null;
+}
+
+export interface AdminRefreshStatusResponse {
+  status: AdminRefreshRunStatus;
+  started_at: string | null;
+  finished_at: string | null;
+  current: AdminRefreshCurrent | null;
+  total_contexts: number;
+  completed_count: number;
+  ok_count: number;
+  failed_count: number;
+  completed: AdminRefreshContextResult[];
+  last_error: string | null;
+}

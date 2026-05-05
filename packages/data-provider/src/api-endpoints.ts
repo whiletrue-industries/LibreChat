@@ -493,3 +493,8 @@ export const adminSources = (): string => `${BASE_URL}/api/admin/sources`;
 
 export const adminSource = (context: string): string =>
   `${BASE_URL}/api/admin/sources/${encodeURIComponent(context)}`;
+
+/* --- Admin Refresh --- */
+export const adminRefresh = (): string => `${BASE_URL}/api/admin/refresh`;
+
+export const adminRefreshStatus = (): string => `${BASE_URL}/api/admin/refresh/status`;
