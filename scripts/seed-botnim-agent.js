@@ -154,18 +154,19 @@ function loadOpenApiSpecs() {
     .filter((f) => f.endsWith('.yaml') || f.endsWith('.yml'));
   if (!files.length) throw new Error(`no .yaml files in ${dir}`);
   const botnimOverride = process.env.SEED_BOTNIM_API_BASE;
+  // OpenAPI specs whose `servers[0].url` points at the botnim-api
+  // backend and must be rewritten per env. budgetkey + takanon point
+  // at external services and are intentionally NOT in this list.
+  const BOTNIM_OWNED_SPECS = new Set(['botnim', 'generate_word_doc']);
   return files.map((f) => {
     let raw = fs.readFileSync(path.join(dir, f), 'utf8');
     const name = path.basename(f, path.extname(f));
-    // Rewrite the botnim.yaml server URL for local docker testing:
-    // the shipped spec points at staging.botnim.co.il; locally we want
-    // the in-compose botnim_api service.
-    if (name === 'botnim' && botnimOverride) {
+    if (BOTNIM_OWNED_SPECS.has(name) && botnimOverride) {
       const parsed = yaml.load(raw);
       if (parsed?.servers?.length) {
         parsed.servers[0].url = botnimOverride;
         raw = JSON.stringify(parsed, null, 2);
-        console.log(`[seed] botnim spec server rewritten → ${botnimOverride}`);
+        console.log(`[seed] ${name} spec server rewritten → ${botnimOverride}`);
       }
     }
     return { name, raw, path: path.join(dir, f) };
