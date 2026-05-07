@@ -201,6 +201,175 @@ async function putTestQuestions({ agentType, questions, createdBy }) {
   }
 }
 
+// Returns canonical tool list merged with the active override row per tool.
+// `canonicalTools` is `{toolName: defaultDescription}` supplied by the caller
+// (the controller resolves it from the rebuilding-bots `/botnim/config/<bot>`
+// endpoint). The merge is done in JS so this layer stays storage-only.
+async function listToolOverrides(agentType, canonicalTools) {
+  const pool = getPool();
+  const { rows: active } = await pool.query(
+    `SELECT * FROM agent_tool_overrides
+     WHERE agent_type = $1 AND active = true`,
+    [agentType],
+  );
+  const overrideByName = new Map();
+  for (const row of active) {
+    overrideByName.set(row.tool_name, row);
+  }
+  const result = [];
+  const canonical = canonicalTools || {};
+  for (const toolName of Object.keys(canonical)) {
+    const row = overrideByName.get(toolName) || null;
+    result.push({
+      toolName,
+      defaultDescription: canonical[toolName],
+      override: row
+        ? {
+            id: row.id,
+            description: row.description,
+            publishedAt: row.published_at,
+          }
+        : null,
+    });
+  }
+  return result;
+}
+
+// All override versions for (agent_type, tool_name) ordered newest first.
+async function listToolOverrideVersions({ agentType, toolName }) {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `SELECT * FROM agent_tool_overrides
+     WHERE agent_type = $1 AND tool_name = $2
+     ORDER BY created_at DESC`,
+    [agentType, toolName],
+  );
+  return rows;
+}
+
+// Insert a draft override row. parent_version_id links to the current active
+// row (if any); first-ever drafts have a null parent.
+async function saveToolOverrideDraft({
+  agentType,
+  toolName,
+  description,
+  changeNote,
+  createdBy,
+}) {
+  const pool = getPool();
+  const { rows: active } = await pool.query(
+    `SELECT id FROM agent_tool_overrides
+     WHERE agent_type = $1 AND tool_name = $2 AND active = true
+     LIMIT 1`,
+    [agentType, toolName],
+  );
+  const parentId = active.length > 0 ? active[0].id : null;
+  const { rows } = await pool.query(
+    `INSERT INTO agent_tool_overrides
+       (agent_type, tool_name, description,
+        active, is_draft, parent_version_id, change_note, created_by)
+     VALUES ($1, $2, $3, false, true, $4, $5, $6)
+     RETURNING *`,
+    [agentType, toolName, description, parentId, changeNote, createdBy],
+  );
+  return rows[0];
+}
+
+// Transactionally demote the current active row (if any) and promote the
+// draft. parentVersionId === null means "first publish" (no prior active);
+// otherwise it must still match the active row id or we throw "stale parent".
+async function publishToolOverride({ agentType, toolName, draftId, parentVersionId }) {
+  const pool = getPool();
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    if (parentVersionId !== null && parentVersionId !== undefined) {
+      const demote = await client.query(
+        `UPDATE agent_tool_overrides SET active = false
+         WHERE id = $1 AND active = true
+         RETURNING id`,
+        [parentVersionId],
+      );
+      if (demote.rowCount === 0) {
+        await client.query('ROLLBACK');
+        throw new Error('stale parent: parentVersionId is no longer the active row');
+      }
+    } else {
+      const existing = await client.query(
+        `SELECT id FROM agent_tool_overrides
+         WHERE agent_type = $1 AND tool_name = $2 AND active = true
+         LIMIT 1`,
+        [agentType, toolName],
+      );
+      if (existing.rowCount > 0) {
+        await client.query('ROLLBACK');
+        throw new Error('stale parent: an active row already exists; pass its id as parentVersionId');
+      }
+    }
+    const { rows } = await client.query(
+      `UPDATE agent_tool_overrides
+       SET active = true, is_draft = false, published_at = now()
+       WHERE id = $1
+       RETURNING *`,
+      [draftId],
+    );
+    await client.query('COMMIT');
+    return rows[0];
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+// Restore a named override version: insert a copy as the new active row,
+// demoting whatever active row currently exists for the same (agent, tool).
+async function restoreToolOverride({ agentType, toolName, versionId }) {
+  const pool = getPool();
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: target } = await client.query(
+      `SELECT * FROM agent_tool_overrides WHERE id = $1 LIMIT 1`,
+      [versionId],
+    );
+    if (target.length === 0) {
+      await client.query('ROLLBACK');
+      throw new Error(`version not found: ${versionId}`);
+    }
+    const ver = target[0];
+    if (ver.agent_type !== agentType || ver.tool_name !== toolName) {
+      await client.query('ROLLBACK');
+      throw new Error(
+        `version ${versionId} does not match ${agentType}/${toolName}`,
+      );
+    }
+    const { rows: demoted } = await client.query(
+      `UPDATE agent_tool_overrides SET active = false
+       WHERE agent_type = $1 AND tool_name = $2 AND active = true
+       RETURNING id`,
+      [agentType, toolName],
+    );
+    const parentVersionId = demoted.length > 0 ? demoted[0].id : null;
+    const { rows } = await client.query(
+      `INSERT INTO agent_tool_overrides
+         (agent_type, tool_name, description,
+          active, is_draft, parent_version_id, published_at)
+       VALUES ($1, $2, $3, true, false, $4, now())
+       RETURNING *`,
+      [agentType, toolName, ver.description, parentVersionId],
+    );
+    await client.query('COMMIT');
+    return rows[0];
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 // Returns the time window during which a version was active.
 // windowStart = COALESCE(published_at, created_at) of the target version.
 // windowEnd   = published_at of the next published version after windowStart.
@@ -240,6 +409,11 @@ module.exports = {
   saveDraft,
   publish,
   restore,
+  listToolOverrides,
+  listToolOverrideVersions,
+  saveToolOverrideDraft,
+  publishToolOverride,
+  restoreToolOverride,
   getTestQuestions,
   putTestQuestions,
   getVersionUsage,
