@@ -2,6 +2,7 @@
 
 const aurora = require('~/server/services/AdminPrompts/aurora');
 const { fetchCanonicalTools } = require('~/server/services/AdminPrompts/canonicalTools');
+const draftAgentService = require('~/server/services/AdminPrompts/draftAgent');
 const { AdminPrompts } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { AgentPrompt, AgentPromptTestQuestion } = require('~/db/models');
@@ -165,6 +166,7 @@ async function saveDraft(req, res) {
       changeNote,
       createdBy: req.user?.id || req.user?._id?.toString(),
     });
+    await draftAgentService.refreshDraftAgentForBot(agentType);
     return res.status(201).json({ draft: rowToMongoose(row) });
   } catch (err) {
     if (/no active section/i.test(err.message)) {
@@ -468,6 +470,7 @@ async function saveJoinedDraft(req, res) {
     client.release();
   }
 
+  await draftAgentService.refreshDraftAgentForBot(agentType);
   return res.status(201).json({
     drafts: rowsToMongoose(drafts),
     summary: { sectionsTouched: drafts.length, sectionsTotal: parsed.length },
@@ -658,6 +661,7 @@ async function saveToolOverrideDraftHandler(req, res) {
       changeNote: changeNote || null,
       createdBy: req.user?.id || req.user?._id?.toString() || null,
     });
+    await draftAgentService.refreshDraftAgentForBot(agentType);
     return res.status(201).json({ draft: toolOverrideRowToCamel(row) });
   } catch (err) {
     req.log?.error({ err }, 'saveToolOverrideDraft failed');

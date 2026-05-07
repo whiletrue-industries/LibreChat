@@ -542,6 +542,62 @@ async function getVersionUsage({ agentType, sectionKey, versionId }) {
   return { windowStart, windowEnd, version: ver };
 }
 
+// Return the would-be-active sections per (agent_type, section_key): for each
+// section_key prefer the newest is_draft=true row, otherwise fall back to the
+// active=true row. Used by the draft-Agent mirror so admins can chat with the
+// in-flight draft text. Rows shaped identically to listSections().
+async function listLatestDraftOrActiveSections(agentType) {
+  const pool = getPool();
+  const { rows: active } = await pool.query(
+    `SELECT * FROM agent_prompts
+     WHERE agent_type = $1 AND active = true`,
+    [agentType],
+  );
+  const { rows: drafts } = await pool.query(
+    `SELECT DISTINCT ON (section_key) *
+     FROM agent_prompts
+     WHERE agent_type = $1 AND is_draft = true
+     ORDER BY section_key, created_at DESC`,
+    [agentType],
+  );
+  const draftBySection = new Map(drafts.map((d) => [d.section_key, d]));
+  const merged = active.map((a) => draftBySection.get(a.section_key) || a);
+  merged.sort((x, y) => x.ordinal - y.ordinal);
+  return merged;
+}
+
+// Return tool descriptions for the draft Agent mirror: prefer the newest
+// is_draft=true override over the active override over the canonical default.
+// Output shape: { toolName: description, ... } covering every tool name in
+// canonicalTools (so the draft Agent's tool list always matches canonical).
+async function listLatestDraftOrActiveToolDescriptions(agentType, canonicalTools) {
+  const pool = getPool();
+  const { rows: active } = await pool.query(
+    `SELECT tool_name, description FROM agent_tool_overrides
+     WHERE agent_type = $1 AND active = true`,
+    [agentType],
+  );
+  const { rows: drafts } = await pool.query(
+    `SELECT DISTINCT ON (tool_name) tool_name, description
+     FROM agent_tool_overrides
+     WHERE agent_type = $1 AND is_draft = true
+     ORDER BY tool_name, created_at DESC`,
+    [agentType],
+  );
+  const out = {};
+  const canonical = canonicalTools || {};
+  for (const name of Object.keys(canonical)) {
+    out[name] = canonical[name];
+  }
+  for (const row of active) {
+    out[row.tool_name] = row.description;
+  }
+  for (const row of drafts) {
+    out[row.tool_name] = row.description;
+  }
+  return out;
+}
+
 module.exports = {
   listSections,
   listVersions,
@@ -557,6 +613,8 @@ module.exports = {
   saveToolOverrideDraft,
   publishToolOverride,
   restoreToolOverride,
+  listLatestDraftOrActiveSections,
+  listLatestDraftOrActiveToolDescriptions,
   getTestQuestions,
   putTestQuestions,
   getVersionUsage,
