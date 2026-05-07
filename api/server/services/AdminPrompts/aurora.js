@@ -370,6 +370,145 @@ async function restoreToolOverride({ agentType, toolName, versionId }) {
   }
 }
 
+// Returns rows from the agent_prompt_snapshots view, newest first.
+async function listSnapshots(agentType, limit = 200) {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `SELECT agent_type, snapshot_minute, section_version_ids, section_keys, published_by
+     FROM agent_prompt_snapshots
+     WHERE agent_type = $1
+     ORDER BY snapshot_minute DESC
+     LIMIT $2`,
+    [agentType, limit],
+  );
+  return rows;
+}
+
+// Returns all draft rows for an agent (newest first per section_key) plus
+// the current active row id for each (so the caller can pass parent_version_id
+// at publish time).
+async function listAllDrafts(agentType) {
+  const pool = getPool();
+  const { rows: drafts } = await pool.query(
+    `SELECT DISTINCT ON (section_key) *
+     FROM agent_prompts
+     WHERE agent_type = $1 AND is_draft = true
+     ORDER BY section_key, created_at DESC`,
+    [agentType],
+  );
+  const { rows: actives } = await pool.query(
+    `SELECT section_key, id AS active_id
+     FROM agent_prompts
+     WHERE agent_type = $1 AND active = true`,
+    [agentType],
+  );
+  const activeBySection = new Map();
+  for (const a of actives) {
+    activeBySection.set(a.section_key, a.active_id);
+  }
+  return drafts.map((d) => ({
+    draft: d,
+    parentVersionId: activeBySection.get(d.section_key) || null,
+  }));
+}
+
+// Publish a set of draft rows atomically. `items` is an array of
+// `{draftId, parentVersionId, sectionKey}`. Either every section flips
+// or none do.
+async function publishAllDrafts({ agentType, items }) {
+  const pool = getPool();
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const results = [];
+    for (const item of items) {
+      if (item.parentVersionId) {
+        const demote = await client.query(
+          `UPDATE agent_prompts SET active = false
+           WHERE id = $1 AND active = true AND agent_type = $2 AND section_key = $3
+           RETURNING id`,
+          [item.parentVersionId, agentType, item.sectionKey],
+        );
+        if (demote.rowCount === 0) {
+          await client.query('ROLLBACK');
+          throw new Error(
+            `stale parent for section ${item.sectionKey}: ${item.parentVersionId}`,
+          );
+        }
+      }
+      const { rows } = await client.query(
+        `UPDATE agent_prompts
+         SET active = true, is_draft = false, published_at = now()
+         WHERE id = $1 AND agent_type = $2 AND section_key = $3
+         RETURNING *`,
+        [item.draftId, agentType, item.sectionKey],
+      );
+      if (rows.length === 0) {
+        await client.query('ROLLBACK');
+        throw new Error(`draft not found for section ${item.sectionKey}: ${item.draftId}`);
+      }
+      results.push(rows[0]);
+    }
+    await client.query('COMMIT');
+    return results;
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+// Restore an entire snapshot in one transaction: for each version id,
+// demote the current active row in that section and insert a copy of the
+// named version as the new active row. Either all sections flip or none.
+async function restoreSnapshotMinute({ agentType, sectionVersionIds }) {
+  const pool = getPool();
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const results = [];
+    for (const versionId of sectionVersionIds) {
+      const { rows: target } = await client.query(
+        `SELECT * FROM agent_prompts WHERE id = $1 LIMIT 1`,
+        [versionId],
+      );
+      if (target.length === 0) {
+        await client.query('ROLLBACK');
+        throw new Error(`version not found: ${versionId}`);
+      }
+      const ver = target[0];
+      if (ver.agent_type !== agentType) {
+        await client.query('ROLLBACK');
+        throw new Error(`version ${versionId} does not belong to agent ${agentType}`);
+      }
+      const { rows: demoted } = await client.query(
+        `UPDATE agent_prompts SET active = false
+         WHERE agent_type = $1 AND section_key = $2 AND active = true
+         RETURNING id`,
+        [agentType, ver.section_key],
+      );
+      const parentVersionId = demoted.length > 0 ? demoted[0].id : null;
+      const { rows } = await client.query(
+        `INSERT INTO agent_prompts
+           (agent_type, section_key, ordinal, header_text, body,
+            active, is_draft, parent_version_id, published_at)
+         VALUES ($1, $2, $3, $4, $5, true, false, $6, now())
+         RETURNING *`,
+        [agentType, ver.section_key, ver.ordinal, ver.header_text, ver.body, parentVersionId],
+      );
+      results.push(rows[0]);
+    }
+    await client.query('COMMIT');
+    return results;
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 // Returns the time window during which a version was active.
 // windowStart = COALESCE(published_at, created_at) of the target version.
 // windowEnd   = published_at of the next published version after windowStart.
@@ -409,6 +548,10 @@ module.exports = {
   saveDraft,
   publish,
   restore,
+  listSnapshots,
+  listAllDrafts,
+  publishAllDrafts,
+  restoreSnapshotMinute,
   listToolOverrides,
   listToolOverrideVersions,
   saveToolOverrideDraft,

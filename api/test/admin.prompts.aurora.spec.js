@@ -45,6 +45,18 @@ describe('AdminPrompts/aurora', () => {
         created_by text
       )
     `);
+    await client.query(`
+      CREATE OR REPLACE VIEW agent_prompt_snapshots AS
+      SELECT
+        agent_type,
+        date_trunc('minute', published_at)               AS snapshot_minute,
+        array_agg(id ORDER BY ordinal)                   AS section_version_ids,
+        array_agg(section_key ORDER BY ordinal)          AS section_keys,
+        max(created_by)                                  AS published_by
+      FROM agent_prompts
+      WHERE published_at IS NOT NULL
+      GROUP BY agent_type, date_trunc('minute', published_at)
+    `);
     process.env.DATABASE_URL = TEST_DB_URL;
   });
 
@@ -342,5 +354,147 @@ describe('AdminPrompts/aurora', () => {
         versionId: rulesId,
       }),
     ).rejects.toThrow(/does not match/i);
+  });
+
+  it('13. listSnapshots groups rows by minute and returns newest first', async () => {
+    await client.query(
+      `INSERT INTO agent_prompts
+         (agent_type, section_key, ordinal, header_text, body, active, is_draft, published_at, created_by)
+       VALUES
+         ('unified', 'intro', 0, 'I', 'i v1', false, false, '2026-01-01T12:00:00Z', 'admin'),
+         ('unified', 'rules', 1, 'R', 'r v1', false, false, '2026-01-01T12:00:30Z', 'admin'),
+         ('unified', 'intro', 0, 'I', 'i v2', true,  false, '2026-04-10T08:00:00Z', 'admin'),
+         ('unified', 'rules', 1, 'R', 'r v2', true,  false, '2026-04-10T08:00:45Z', 'admin')`,
+    );
+
+    const snaps = await auroraAdapter.listSnapshots('unified');
+    expect(snaps).toHaveLength(2);
+    expect(new Date(snaps[0].snapshot_minute).toISOString()).toBe('2026-04-10T08:00:00.000Z');
+    expect(snaps[0].section_keys).toEqual(['intro', 'rules']);
+    expect(snaps[0].section_version_ids).toHaveLength(2);
+    expect(new Date(snaps[1].snapshot_minute).toISOString()).toBe('2026-01-01T12:00:00.000Z');
+  });
+
+  it('14. listAllDrafts returns one draft per section_key, paired with its active id', async () => {
+    const active = await seedActive({ sectionKey: 'intro', body: 'live intro' });
+    await seedActive({ sectionKey: 'rules', ordinal: 1, header_text: 'Rules', body: 'live rules' });
+    await seedDraft({ sectionKey: 'intro', body: 'draft intro v1', parentId: active.id });
+    // Newer draft for the same section — listAllDrafts should pick this one.
+    const newer = await client.query(
+      `INSERT INTO agent_prompts
+         (agent_type, section_key, ordinal, header_text, body, active, is_draft, parent_version_id, created_at)
+       VALUES ('unified', 'intro', 0, 'Intro', 'draft intro v2', false, true, $1, now() + interval '1 second')
+       RETURNING *`,
+      [active.id],
+    );
+
+    const drafts = await auroraAdapter.listAllDrafts('unified');
+    const introEntry = drafts.find((d) => d.draft.section_key === 'intro');
+    expect(introEntry).toBeTruthy();
+    expect(introEntry.draft.id).toBe(newer.rows[0].id);
+    expect(introEntry.parentVersionId).toBe(active.id);
+    // No drafts for 'rules' so it should not appear.
+    expect(drafts.find((d) => d.draft.section_key === 'rules')).toBeUndefined();
+  });
+
+  it('15. publishAllDrafts atomically promotes every draft and demotes its parent', async () => {
+    const introActive = await seedActive({ sectionKey: 'intro', body: 'old intro' });
+    const rulesActive = await seedActive({
+      sectionKey: 'rules', ordinal: 1, header_text: 'Rules', body: 'old rules',
+    });
+    const introDraft = await seedDraft({
+      sectionKey: 'intro', body: 'new intro', parentId: introActive.id,
+    });
+    const rulesDraft = await seedDraft({
+      sectionKey: 'rules', body: 'new rules', parentId: rulesActive.id,
+    });
+
+    const published = await auroraAdapter.publishAllDrafts({
+      agentType: 'unified',
+      items: [
+        { draftId: introDraft.id, sectionKey: 'intro', parentVersionId: introActive.id },
+        { draftId: rulesDraft.id, sectionKey: 'rules', parentVersionId: rulesActive.id },
+      ],
+    });
+    expect(published).toHaveLength(2);
+    expect(published.every((p) => p.active === true && p.is_draft === false)).toBe(true);
+
+    const { rows: olds } = await client.query(
+      `SELECT id, active FROM agent_prompts WHERE id = ANY($1::uuid[])`,
+      [[introActive.id, rulesActive.id]],
+    );
+    expect(olds.every((r) => r.active === false)).toBe(true);
+  });
+
+  it('16. publishAllDrafts rolls back the whole transaction when any section is stale', async () => {
+    const introActive = await seedActive({ sectionKey: 'intro', body: 'old intro' });
+    const rulesActive = await seedActive({
+      sectionKey: 'rules', ordinal: 1, header_text: 'Rules', body: 'old rules',
+    });
+    const introDraft = await seedDraft({
+      sectionKey: 'intro', body: 'new intro', parentId: introActive.id,
+    });
+    const rulesDraft = await seedDraft({
+      sectionKey: 'rules', body: 'new rules', parentId: rulesActive.id,
+    });
+
+    // Demote rulesActive externally so its parent is stale.
+    await client.query(`UPDATE agent_prompts SET active = false WHERE id = $1`, [rulesActive.id]);
+
+    await expect(
+      auroraAdapter.publishAllDrafts({
+        agentType: 'unified',
+        items: [
+          { draftId: introDraft.id, sectionKey: 'intro', parentVersionId: introActive.id },
+          { draftId: rulesDraft.id, sectionKey: 'rules', parentVersionId: rulesActive.id },
+        ],
+      }),
+    ).rejects.toThrow(/stale parent/i);
+
+    // intro section must NOT have flipped because the TX rolled back.
+    const { rows } = await client.query(
+      `SELECT active FROM agent_prompts WHERE id = $1`,
+      [introActive.id],
+    );
+    expect(rows[0].active).toBe(true);
+    const { rows: drafts } = await client.query(
+      `SELECT active, is_draft FROM agent_prompts WHERE id = $1`,
+      [introDraft.id],
+    );
+    expect(drafts[0].active).toBe(false);
+    expect(drafts[0].is_draft).toBe(true);
+  });
+
+  it('17. restoreSnapshotMinute inserts a new active row per section, demoting prior actives', async () => {
+    const introOld = await client.query(
+      `INSERT INTO agent_prompts
+         (agent_type, section_key, ordinal, header_text, body, active, is_draft, published_at, created_at)
+       VALUES ('unified', 'intro', 0, 'I', 'snapshot intro', false, false, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')
+       RETURNING *`,
+    );
+    const rulesOld = await client.query(
+      `INSERT INTO agent_prompts
+         (agent_type, section_key, ordinal, header_text, body, active, is_draft, published_at, created_at)
+       VALUES ('unified', 'rules', 1, 'R', 'snapshot rules', false, false, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')
+       RETURNING *`,
+    );
+    // Current actives that will be demoted.
+    const introNow = await seedActive({ sectionKey: 'intro', body: 'current intro' });
+    const rulesNow = await seedActive({
+      sectionKey: 'rules', ordinal: 1, header_text: 'R', body: 'current rules',
+    });
+
+    const restored = await auroraAdapter.restoreSnapshotMinute({
+      agentType: 'unified',
+      sectionVersionIds: [introOld.rows[0].id, rulesOld.rows[0].id],
+    });
+    expect(restored).toHaveLength(2);
+    expect(restored.map((r) => r.body).sort()).toEqual(['snapshot intro', 'snapshot rules']);
+
+    const { rows } = await client.query(
+      `SELECT active FROM agent_prompts WHERE id = ANY($1::uuid[])`,
+      [[introNow.id, rulesNow.id]],
+    );
+    expect(rows.every((r) => r.active === false)).toBe(true);
   });
 });
