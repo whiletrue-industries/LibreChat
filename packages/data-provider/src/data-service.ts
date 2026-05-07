@@ -1188,6 +1188,39 @@ export function getAdminPromptVersionUsage(
   );
 }
 
+export function getAdminPromptJoined(
+  agentType: string,
+): Promise<q.AdminPromptJoinedResponse> {
+  return request.get(endpoints.adminPromptsJoined(agentType));
+}
+
+export function saveAdminPromptJoinedDraft(
+  agentType: string,
+  input: q.AdminPromptJoinedDraftInput,
+): Promise<q.AdminPromptJoinedDraftResponse> {
+  return request.post(endpoints.adminPromptsJoinedDraft(agentType), input);
+}
+
+export function publishAdminPromptJoined(
+  agentType: string,
+  input: q.AdminPromptJoinedPublishInput,
+): Promise<q.AdminPromptJoinedPublishResponse> {
+  return request.post(endpoints.adminPromptsJoinedPublish(agentType), input);
+}
+
+export function getAdminPromptSnapshots(
+  agentType: string,
+): Promise<q.AdminPromptSnapshotsResponse> {
+  return request.get(endpoints.adminPromptsSnapshots(agentType));
+}
+
+export function restoreAdminPromptSnapshot(
+  agentType: string,
+  minute: string,
+): Promise<q.AdminPromptSnapshotRestoreResponse> {
+  return request.post(endpoints.adminPromptsSnapshotRestore(agentType, minute));
+}
+
 /* --- Admin Sources --- */
 export function getAdminSources(): Promise<q.AdminSourcesResponse> {
   return request.get(endpoints.adminSources());

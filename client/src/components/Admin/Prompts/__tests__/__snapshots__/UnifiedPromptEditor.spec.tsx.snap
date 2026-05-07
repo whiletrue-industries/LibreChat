@@ -1,0 +1,98 @@
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
+
+exports[`UnifiedPromptEditor renders the textarea pre-populated from the /joined fixture 1`] = `
+<DocumentFragment>
+  <main
+    class="mx-auto w-full max-w-7xl bg-surface-primary p-6 text-text-primary"
+    dir="ltr"
+  >
+    <div
+      class="mb-4 flex items-center justify-between"
+    >
+      <div>
+        <h1
+          class="text-xl font-semibold"
+        >
+          com_admin_prompts_unified_editor_title
+          <span
+            class="mx-2 text-text-secondary"
+          >
+            —
+          </span>
+          <span>
+            com_admin_prompts_agent_unified
+          </span>
+        </h1>
+        <p
+          class="mt-1 text-xs text-text-secondary"
+        >
+          com_admin_prompts_unified_editor_subtitle
+        </p>
+      </div>
+      <div
+        class="flex items-center gap-3 text-sm"
+      >
+        com_admin_prompts_per_section_view← com_admin_prompts_title
+      </div>
+    </div>
+    <div
+      class="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_320px]"
+    >
+      <div
+        class="flex flex-col gap-3"
+      >
+        <textarea
+          aria-label="com_admin_prompts_unified_editor_title"
+          class="min-h-[60vh] w-full rounded border border-border-medium bg-surface-primary-alt p-3 font-mono text-sm leading-6 text-text-primary"
+          data-testid="unified-prompt-textarea"
+          spellcheck="false"
+        >
+          &lt;!-- SECTION_KEY: preamble --&gt;
+original preamble
+
+&lt;!-- SECTION_KEY: rules --&gt;
+original rules
+
+        </textarea>
+        <input
+          class="rounded border border-border-medium bg-surface-primary-alt p-2 text-sm text-text-primary"
+          placeholder="com_admin_prompts_change_note"
+          type="text"
+          value=""
+        />
+        <div
+          class="flex flex-wrap items-center gap-2"
+        >
+          <button
+            class="rounded bg-surface-primary-alt px-3 py-1 text-sm disabled:opacity-50"
+            disabled=""
+            type="button"
+          >
+            com_admin_prompts_save_draft
+          </button>
+          <button
+            class="rounded bg-emerald-600 px-3 py-1 text-sm text-white disabled:opacity-50"
+            disabled=""
+            type="button"
+          >
+            com_admin_prompts_publish
+          </button>
+          <button
+            class="rounded bg-surface-primary-alt px-3 py-1 text-sm disabled:opacity-50"
+            disabled=""
+            type="button"
+          >
+            com_admin_prompts_try_draft
+          </button>
+          <button
+            class="rounded bg-surface-primary-alt px-3 py-1 text-sm"
+            type="button"
+          >
+            com_admin_prompts_snapshots…
+          </button>
+        </div>
+      </div>
+    </div>
+  </main>
+</DocumentFragment>
+`;

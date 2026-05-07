@@ -16,6 +16,13 @@ import type {
   AdminPromptTestQuestionsResponse,
   AdminPromptTestQuestionPutInput,
   AdminPromptUsage,
+  AdminPromptJoinedResponse,
+  AdminPromptJoinedDraftInput,
+  AdminPromptJoinedDraftResponse,
+  AdminPromptJoinedPublishInput,
+  AdminPromptJoinedPublishResponse,
+  AdminPromptSnapshotsResponse,
+  AdminPromptSnapshotRestoreResponse,
 } from 'librechat-data-provider';
 
 export const useAdminPromptAgents = () =>
@@ -160,3 +167,75 @@ export const useAdminPromptVersionUsage = (
       ),
     { enabled: Boolean(versionId), staleTime: 5 * 60 * 1000 },
   );
+
+export const useJoinedPrompt = (agentType: string) =>
+  useQuery<AdminPromptJoinedResponse>(
+    [QueryKeys.adminPromptsJoined, agentType],
+    () => dataService.getAdminPromptJoined(agentType),
+    { enabled: Boolean(agentType) },
+  );
+
+export const useSaveJoinedDraft = (agentType: string) => {
+  const qc = useQueryClient();
+  return useMutation<
+    AdminPromptJoinedDraftResponse,
+    unknown,
+    AdminPromptJoinedDraftInput
+  >(
+    [MutationKeys.saveAdminPromptJoinedDraft, agentType],
+    (input) => dataService.saveAdminPromptJoinedDraft(agentType, input),
+    {
+      onSuccess: () => {
+        qc.invalidateQueries([QueryKeys.adminPromptsJoined, agentType]);
+        qc.invalidateQueries([QueryKeys.adminPromptsSections, agentType]);
+        qc.invalidateQueries([QueryKeys.adminPromptsAgents]);
+      },
+    },
+  );
+};
+
+export const usePublishJoinedDraft = (agentType: string) => {
+  const qc = useQueryClient();
+  return useMutation<
+    AdminPromptJoinedPublishResponse,
+    unknown,
+    AdminPromptJoinedPublishInput
+  >(
+    [MutationKeys.publishAdminPromptJoined, agentType],
+    (input) => dataService.publishAdminPromptJoined(agentType, input),
+    {
+      onSuccess: () => {
+        qc.invalidateQueries([QueryKeys.adminPromptsJoined, agentType]);
+        qc.invalidateQueries([QueryKeys.adminPromptsSections, agentType]);
+        qc.invalidateQueries([QueryKeys.adminPromptsSnapshots, agentType]);
+        qc.invalidateQueries([QueryKeys.adminPromptsAgents]);
+      },
+    },
+  );
+};
+
+export const useSnapshots = (agentType: string) =>
+  useQuery<AdminPromptSnapshotsResponse>(
+    [QueryKeys.adminPromptsSnapshots, agentType],
+    () => dataService.getAdminPromptSnapshots(agentType),
+    { enabled: Boolean(agentType) },
+  );
+
+export const useRestoreSnapshot = (agentType: string) => {
+  const qc = useQueryClient();
+  return useMutation<
+    AdminPromptSnapshotRestoreResponse,
+    unknown,
+    { minute: string }
+  >(
+    [MutationKeys.restoreAdminPromptSnapshot, agentType],
+    ({ minute }) => dataService.restoreAdminPromptSnapshot(agentType, minute),
+    {
+      onSuccess: () => {
+        qc.invalidateQueries([QueryKeys.adminPromptsJoined, agentType]);
+        qc.invalidateQueries([QueryKeys.adminPromptsSections, agentType]);
+        qc.invalidateQueries([QueryKeys.adminPromptsSnapshots, agentType]);
+      },
+    },
+  );
+};

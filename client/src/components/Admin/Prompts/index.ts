@@ -4,4 +4,7 @@ export { default as PromptEditor } from './PromptEditor';
 export { default as PromptHistory } from './PromptHistory';
 export { default as PromptPreview } from './PromptPreview';
 export { default as PromptSectionList } from './PromptSectionList';
+export { default as RestoreConfirmDialog } from './RestoreConfirmDialog';
+export { default as SnapshotsSidebar } from './SnapshotsSidebar';
 export { default as TestQuestions } from './TestQuestions';
+export { default as UnifiedPromptEditor } from './UnifiedPromptEditor';

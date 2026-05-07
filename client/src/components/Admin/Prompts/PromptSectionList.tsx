@@ -59,7 +59,7 @@ export default function PromptSectionList() {
             {rows.map((row) => (
               <tr
                 key={row.sectionKey}
-                onClick={() => navigate(`/d/agent-prompts/${agent}/${row.sectionKey}`)}
+                onClick={() => navigate(`/d/agent-prompts/${agent}/sections/${row.sectionKey}`)}
                 className="cursor-pointer border-b border-border-light hover:bg-surface-primary-alt"
               >
                 <td className="py-2 font-mono text-xs">{row.sectionKey}</td>

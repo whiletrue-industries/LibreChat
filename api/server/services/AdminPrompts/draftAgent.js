@@ -141,10 +141,28 @@ async function refreshDraftAgentForBot(bot) {
   }
 }
 
+// Lookup-only helper for the admin UI. Returns the draft agent's `id` if the
+// mirror exists for `bot`, otherwise null. Never throws — callers should
+// degrade gracefully when null (e.g. disable "Try draft" button).
+async function getDraftAgentId(bot, Agent) {
+  try {
+    if (!Agent) {
+      Agent = require('~/db/models').Agent;
+    }
+    const draftName = draftAgentNameFor(bot);
+    const doc = await Agent.findOne({ name: draftName }).lean();
+    return doc?.id || null;
+  } catch (err) {
+    logger.warn('[draftAgent] getDraftAgentId failed', err);
+    return null;
+  }
+}
+
 module.exports = {
   ensureDraftAgent,
   composeDraftPayload,
   refreshDraftAgentForBot,
+  getDraftAgentId,
   canonicalAgentNameFor,
   draftAgentNameFor,
 };

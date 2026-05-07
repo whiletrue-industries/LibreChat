@@ -383,7 +383,23 @@ async function getJoined(req, res) {
       ordinal: s.ordinal,
       versionId: s.id,
     }));
-    return res.status(200).json({ source: 'aurora', joinedText, versions });
+    let hasDraft = false;
+    try {
+      const drafts = await aurora.listAllDrafts(agentType);
+      hasDraft = Array.isArray(drafts) && drafts.length > 0;
+    } catch (err) {
+      req.log?.warn({ err }, 'getJoined: listAllDrafts failed');
+    }
+    const draftAgentId = await draftAgentService
+      .getDraftAgentId(agentType)
+      .catch(() => null);
+    return res.status(200).json({
+      source: 'aurora',
+      joinedText,
+      versions,
+      hasDraft,
+      draftAgentId,
+    });
   } catch (err) {
     req.log?.error({ err }, 'getJoined failed');
     logger.error('[admin/prompts] getJoined failed', err);
@@ -471,9 +487,14 @@ async function saveJoinedDraft(req, res) {
   }
 
   await draftAgentService.refreshDraftAgentForBot(agentType);
+  const draftAgentId = await draftAgentService
+    .getDraftAgentId(agentType)
+    .catch(() => null);
   return res.status(201).json({
     drafts: rowsToMongoose(drafts),
     summary: { sectionsTouched: drafts.length, sectionsTotal: parsed.length },
+    draftAgentId,
+    hasDraft: drafts.length > 0,
   });
 }
 

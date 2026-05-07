@@ -488,6 +488,24 @@ export const adminPromptsVersionUsage = (
 ): string =>
   `${BASE_URL}/api/admin/prompts/${encodeURIComponent(agentType)}/sections/${encodeURIComponent(sectionKey)}/versions/${encodeURIComponent(versionId)}/usage?limit=${limit}`;
 
+export const adminPromptsJoined = (agentType: string): string =>
+  `${BASE_URL}/api/admin/prompts/${encodeURIComponent(agentType)}/joined`;
+
+export const adminPromptsJoinedDraft = (agentType: string): string =>
+  `${BASE_URL}/api/admin/prompts/${encodeURIComponent(agentType)}/joined/draft`;
+
+export const adminPromptsJoinedPublish = (agentType: string): string =>
+  `${BASE_URL}/api/admin/prompts/${encodeURIComponent(agentType)}/joined/publish`;
+
+export const adminPromptsSnapshots = (agentType: string): string =>
+  `${BASE_URL}/api/admin/prompts/${encodeURIComponent(agentType)}/snapshots`;
+
+export const adminPromptsSnapshotRestore = (
+  agentType: string,
+  minute: string,
+): string =>
+  `${BASE_URL}/api/admin/prompts/${encodeURIComponent(agentType)}/snapshots/${encodeURIComponent(minute)}/restore`;
+
 /* --- Admin Sources --- */
 export const adminSources = (): string => `${BASE_URL}/api/admin/sources`;
 
