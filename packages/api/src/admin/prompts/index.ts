@@ -2,6 +2,8 @@ export { parseMarkers } from './parseMarkers';
 export type { ParsedSection } from './parseMarkers';
 export { assemble } from './assemble';
 export type { AssembleSection } from './assemble';
+export { parse } from './parse';
+export type { ParsedPromptSection } from './parse';
 export {
   getActiveSections,
   getSectionHistory,
