@@ -35,7 +35,7 @@ export default function ToolOverridesTable({ agentType }: ToolOverridesTableProp
       );
     }
     if (toolsQ.isError || !toolsQ.data) {
-      const message = (toolsQ.error as Error | undefined)?.message ?? 'Error';
+      const message = (toolsQ.error as Error | undefined)?.message ?? localize('com_ui_error');
       return (
         <tr>
           <td colSpan={4} className="p-3 text-sm text-red-600">
@@ -79,9 +79,7 @@ export default function ToolOverridesTable({ agentType }: ToolOverridesTableProp
             <tr>
               <th className="w-1/3 p-3">{localize('com_admin_tool_name')}</th>
               <th className="w-1/6 p-3">{localize('com_admin_tool_status')}</th>
-              <th className="w-1/3 p-3">
-                {localize('com_admin_tool_published_at')}
-              </th>
+              <th className="w-1/3 p-3">{localize('com_admin_tool_published_at')}</th>
               <th className="w-12 p-3" aria-hidden="true" />
             </tr>
           </thead>

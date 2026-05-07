@@ -67,7 +67,7 @@ exports[`ToolOverridesTable renders the canonical tool list with override status
               1.4.2026, 15:00:00
             </td>
             <td
-              class="p-3 align-top text-right text-xs"
+              class="p-3 text-right align-top text-xs"
             >
               ▶
             </td>
@@ -96,7 +96,7 @@ exports[`ToolOverridesTable renders the canonical tool list with override status
               —
             </td>
             <td
-              class="p-3 align-top text-right text-xs"
+              class="p-3 text-right align-top text-xs"
             >
               ▶
             </td>
@@ -125,7 +125,7 @@ exports[`ToolOverridesTable renders the canonical tool list with override status
               —
             </td>
             <td
-              class="p-3 align-top text-right text-xs"
+              class="p-3 text-right align-top text-xs"
             >
               ▶
             </td>

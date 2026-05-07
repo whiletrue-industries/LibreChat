@@ -52,7 +52,7 @@ export default function UnifiedPromptEditor() {
     return <div className="p-8 text-center">…</div>;
   }
   if (joinedQ.isError) {
-    const message = (joinedQ.error as Error | undefined)?.message ?? 'Error';
+    const message = (joinedQ.error as Error | undefined)?.message ?? localize('com_ui_error');
     return <div className="p-8 text-center text-red-600">{message}</div>;
   }
 
@@ -94,10 +94,7 @@ export default function UnifiedPromptEditor() {
   };
 
   return (
-    <main
-      className="mx-auto w-full max-w-7xl bg-surface-primary p-6 text-text-primary"
-      dir="ltr"
-    >
+    <main className="mx-auto w-full max-w-7xl bg-surface-primary p-6 text-text-primary" dir="ltr">
       <div className="mb-4 flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold">

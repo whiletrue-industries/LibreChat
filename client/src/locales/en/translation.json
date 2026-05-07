@@ -69,6 +69,7 @@
   "com_admin_prompts_snapshot_restore_warning": "This will republish every section to its body at this snapshot. Continue?",
   "com_admin_prompts_snapshot_before": "Current",
   "com_admin_prompts_snapshot_after": "Snapshot",
+  "com_admin_prompts_snapshot_section_count": "{{count}} sections",
   "com_admin_prompts_cancel": "Cancel",
   "com_admin_prompts_save_draft_summary": "Saved {{touched}} of {{total}} sections.",
   "com_admin_prompts_publish_failed": "Publish failed.",

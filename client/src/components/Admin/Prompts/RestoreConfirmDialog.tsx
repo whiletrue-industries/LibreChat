@@ -30,15 +30,13 @@ export default function RestoreConfirmDialog({
           {localize('com_admin_prompts_snapshot_restore_title')}
         </div>
         <div className="space-y-3 overflow-auto p-4">
-          <div className="text-sm">
-            {localize('com_admin_prompts_snapshot_restore_warning')}
-          </div>
+          <div className="text-sm">{localize('com_admin_prompts_snapshot_restore_warning')}</div>
           <div className="text-xs text-text-secondary">
-            <span className="font-mono">
-              {new Date(snapshot.snapshotMinute).toLocaleString()}
-            </span>
+            <span className="font-mono">{new Date(snapshot.snapshotMinute).toLocaleString()}</span>
             {' · '}
-            {snapshot.sectionKeys.length} sections
+            {localize('com_admin_prompts_snapshot_section_count', {
+              count: snapshot.sectionKeys.length,
+            })}
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div className="flex flex-col">

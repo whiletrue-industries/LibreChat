@@ -24,8 +24,7 @@ export default function SnapshotsSidebar({ agentType }: SnapshotsSidebarProps) {
       return <div className="p-3 text-sm text-text-secondary">…</div>;
     }
     if (snapshotsQ.isError || !snapshotsQ.data) {
-      const message =
-        (snapshotsQ.error as Error | undefined)?.message ?? 'Error';
+      const message = (snapshotsQ.error as Error | undefined)?.message ?? localize('com_ui_error');
       return <div className="p-3 text-sm text-red-600">{message}</div>;
     }
     const rows = snapshotsQ.data.snapshots;
@@ -40,9 +39,7 @@ export default function SnapshotsSidebar({ agentType }: SnapshotsSidebarProps) {
       <ul className="divide-y divide-border-light">
         {rows.map((row) => (
           <li key={row.snapshotMinute} className="flex flex-col gap-1 p-3 text-sm">
-            <div className="font-mono text-xs">
-              {new Date(row.snapshotMinute).toLocaleString()}
-            </div>
+            <div className="font-mono text-xs">{new Date(row.snapshotMinute).toLocaleString()}</div>
             {row.publishedBy && (
               <div className="text-xs text-text-secondary">
                 {localize('com_admin_prompts_snapshot_published_by')}{' '}

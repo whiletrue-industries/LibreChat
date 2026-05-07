@@ -25,8 +25,7 @@ export default function ToolOverrideVersionsModal({
       return <div className="p-3 text-sm text-text-secondary">…</div>;
     }
     if (versionsQ.isError || !versionsQ.data) {
-      const message =
-        (versionsQ.error as Error | undefined)?.message ?? 'Error';
+      const message = (versionsQ.error as Error | undefined)?.message ?? localize('com_ui_error');
       return <div className="p-3 text-sm text-red-600">{message}</div>;
     }
     const versions = versionsQ.data.versions;
@@ -38,10 +37,7 @@ export default function ToolOverrideVersionsModal({
       );
     }
     return (
-      <ul
-        data-testid="tool-versions-list"
-        className="divide-y divide-border-light"
-      >
+      <ul data-testid="tool-versions-list" className="divide-y divide-border-light">
         {versions.map((v) => (
           <li key={v.id} className="flex flex-col gap-2 p-3 text-sm">
             <div className="flex items-baseline justify-between gap-2">
@@ -67,12 +63,8 @@ export default function ToolOverrideVersionsModal({
                 {localize('com_admin_prompts_restore')}
               </button>
             </div>
-            {v.changeNote && (
-              <div className="text-xs text-text-secondary">
-                {v.changeNote}
-              </div>
-            )}
-            <pre className="max-h-40 overflow-auto rounded border border-border-light bg-surface-primary-alt p-2 font-mono text-xs whitespace-pre-wrap">
+            {v.changeNote && <div className="text-xs text-text-secondary">{v.changeNote}</div>}
+            <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded border border-border-light bg-surface-primary-alt p-2 font-mono text-xs">
               {v.description}
             </pre>
           </li>

@@ -31,14 +31,11 @@ export default function ToolOverrideRow({
   const clearOverride = useClearToolOverride(agentType);
   const restore = useRestoreToolOverride(agentType);
 
-  const baseDescription =
-    entry.override?.description ?? entry.defaultDescription;
+  const baseDescription = entry.override?.description ?? entry.defaultDescription;
   const [text, setText] = useState(baseDescription);
   const [changeNote, setChangeNote] = useState('');
   const [draftId, setDraftId] = useState<number | null>(null);
-  const [parentVersionId, setParentVersionId] = useState<number | null>(
-    entry.override?.id ?? null,
-  );
+  const [parentVersionId, setParentVersionId] = useState<number | null>(entry.override?.id ?? null);
   const [versionsOpen, setVersionsOpen] = useState(false);
 
   useEffect(() => {
@@ -133,9 +130,7 @@ export default function ToolOverrideRow({
             ? new Date(entry.override.publishedAt).toLocaleString()
             : '—'}
         </td>
-        <td className="p-3 align-top text-right text-xs">
-          {expanded ? '▼' : '▶'}
-        </td>
+        <td className="p-3 text-right align-top text-xs">{expanded ? '▼' : '▶'}</td>
       </tr>
       {expanded && (
         <tr>
@@ -174,9 +169,7 @@ export default function ToolOverrideRow({
                 <button
                   type="button"
                   onClick={handlePublish}
-                  disabled={
-                    draftId === null || !changeNote || publish.isLoading
-                  }
+                  disabled={draftId === null || !changeNote || publish.isLoading}
                   className="rounded bg-emerald-600 px-3 py-1 text-sm text-white disabled:opacity-50"
                 >
                   {localize('com_admin_tool_publish_override')}
