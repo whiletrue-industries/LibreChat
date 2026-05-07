@@ -3,7 +3,10 @@ include "root" {
 }
 
 terraform {
-  source = "${get_repo_root()}//infra/envs/prod"
+  # Relative path; using get_repo_root() makes terragrunt copy the entire
+  # LibreChat repo (incl. node_modules) into .terragrunt-cache and stalls
+  # plan/apply for ~hour on dev machines with a populated node_modules.
+  source = "../../envs/prod"
 }
 
 inputs = {
