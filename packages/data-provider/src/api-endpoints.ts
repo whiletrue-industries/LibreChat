@@ -506,6 +506,24 @@ export const adminPromptsSnapshotRestore = (
 ): string =>
   `${BASE_URL}/api/admin/prompts/${encodeURIComponent(agentType)}/snapshots/${encodeURIComponent(minute)}/restore`;
 
+export const adminPromptsTools = (agentType: string): string =>
+  `${BASE_URL}/api/admin/prompts/${encodeURIComponent(agentType)}/tools`;
+
+export const adminPromptsToolVersions = (agentType: string, toolName: string): string =>
+  `${BASE_URL}/api/admin/prompts/${encodeURIComponent(agentType)}/tools/${encodeURIComponent(toolName)}/versions`;
+
+export const adminPromptsToolDraft = (agentType: string, toolName: string): string =>
+  `${BASE_URL}/api/admin/prompts/${encodeURIComponent(agentType)}/tools/${encodeURIComponent(toolName)}/draft`;
+
+export const adminPromptsToolPublish = (agentType: string, toolName: string): string =>
+  `${BASE_URL}/api/admin/prompts/${encodeURIComponent(agentType)}/tools/${encodeURIComponent(toolName)}/publish`;
+
+export const adminPromptsToolRestore = (agentType: string, toolName: string): string =>
+  `${BASE_URL}/api/admin/prompts/${encodeURIComponent(agentType)}/tools/${encodeURIComponent(toolName)}/restore`;
+
+export const adminPromptsToolClear = (agentType: string, toolName: string): string =>
+  `${BASE_URL}/api/admin/prompts/${encodeURIComponent(agentType)}/tools/${encodeURIComponent(toolName)}/clear`;
+
 /* --- Admin Sources --- */
 export const adminSources = (): string => `${BASE_URL}/api/admin/sources`;
 

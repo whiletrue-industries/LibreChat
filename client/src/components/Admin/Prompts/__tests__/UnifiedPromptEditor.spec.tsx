@@ -48,6 +48,20 @@ jest.mock('~/data-provider/AdminPrompts/queries', () => ({
   }),
   useSnapshots: () => ({ isLoading: false, isError: false, data: { snapshots: [] } }),
   useRestoreSnapshot: () => ({ mutate: jest.fn(), isLoading: false }),
+  useToolOverrides: () => ({
+    isLoading: false,
+    isError: false,
+    data: { tools: [] },
+  }),
+  useToolOverrideVersions: () => ({
+    isLoading: false,
+    isError: false,
+    data: { versions: [] },
+  }),
+  useSaveToolOverrideDraft: () => ({ mutate: jest.fn(), isLoading: false, isError: false }),
+  usePublishToolOverride: () => ({ mutate: jest.fn(), isLoading: false, isError: false }),
+  useClearToolOverride: () => ({ mutate: jest.fn(), isLoading: false, isError: false }),
+  useRestoreToolOverride: () => ({ mutate: jest.fn(), isLoading: false, isError: false }),
 }));
 
 describe('UnifiedPromptEditor', () => {

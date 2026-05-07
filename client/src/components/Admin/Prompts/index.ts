@@ -7,4 +7,7 @@ export { default as PromptSectionList } from './PromptSectionList';
 export { default as RestoreConfirmDialog } from './RestoreConfirmDialog';
 export { default as SnapshotsSidebar } from './SnapshotsSidebar';
 export { default as TestQuestions } from './TestQuestions';
+export { default as ToolOverrideRow } from './ToolOverrideRow';
+export { default as ToolOverridesTable } from './ToolOverridesTable';
+export { default as ToolOverrideVersionsModal } from './ToolOverrideVersionsModal';
 export { default as UnifiedPromptEditor } from './UnifiedPromptEditor';

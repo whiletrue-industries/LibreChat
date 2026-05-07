@@ -323,6 +323,23 @@ async function publishToolOverride({ agentType, toolName, draftId, parentVersion
   }
 }
 
+// Clear the active override for (agent_type, tool_name) by demoting the
+// current active row to active=false. The row stays in the table so
+// listToolOverrideVersions still returns it (admins can restoreToolOverride
+// it later). After this call, listToolOverrides reports
+// `override: null` and the assemble pipeline falls back to the canonical
+// default description.
+async function clearToolOverride({ agentType, toolName }) {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `UPDATE agent_tool_overrides SET active = false
+     WHERE agent_type = $1 AND tool_name = $2 AND active = true
+     RETURNING *`,
+    [agentType, toolName],
+  );
+  return rows[0] || null;
+}
+
 // Restore a named override version: insert a copy as the new active row,
 // demoting whatever active row currently exists for the same (agent, tool).
 async function restoreToolOverride({ agentType, toolName, versionId }) {
@@ -613,6 +630,7 @@ module.exports = {
   saveToolOverrideDraft,
   publishToolOverride,
   restoreToolOverride,
+  clearToolOverride,
   listLatestDraftOrActiveSections,
   listLatestDraftOrActiveToolDescriptions,
   getTestQuestions,

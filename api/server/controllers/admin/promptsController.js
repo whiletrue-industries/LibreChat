@@ -739,6 +739,20 @@ async function restoreToolOverrideHandler(req, res) {
   }
 }
 
+async function clearToolOverrideHandler(req, res) {
+  const agentType = req.params.agent;
+  const toolName = req.params.toolName;
+  try {
+    const row = await aurora.clearToolOverride({ agentType, toolName });
+    await draftAgentService.refreshDraftAgentForBot(agentType);
+    return res.status(200).json({ cleared: toolOverrideRowToCamel(row) });
+  } catch (err) {
+    req.log?.error({ err }, 'clearToolOverride failed');
+    logger.error('[admin/prompts] clearToolOverride failed', err);
+    return res.status(503).json({ error: 'prompts service unavailable; try again' });
+  }
+}
+
 module.exports = {
   listAgents,
   listSections,
@@ -760,4 +774,5 @@ module.exports = {
   saveToolOverrideDraft: saveToolOverrideDraftHandler,
   publishToolOverride: publishToolOverrideHandler,
   restoreToolOverride: restoreToolOverrideHandler,
+  clearToolOverride: clearToolOverrideHandler,
 };

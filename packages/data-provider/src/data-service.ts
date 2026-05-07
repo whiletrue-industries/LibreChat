@@ -1221,6 +1221,50 @@ export function restoreAdminPromptSnapshot(
   return request.post(endpoints.adminPromptsSnapshotRestore(agentType, minute));
 }
 
+export function getAdminPromptToolOverrides(
+  agentType: string,
+): Promise<q.AdminPromptToolOverridesResponse> {
+  return request.get(endpoints.adminPromptsTools(agentType));
+}
+
+export function getAdminPromptToolOverrideVersions(
+  agentType: string,
+  toolName: string,
+): Promise<q.AdminPromptToolOverrideVersionsResponse> {
+  return request.get(endpoints.adminPromptsToolVersions(agentType, toolName));
+}
+
+export function saveAdminPromptToolOverrideDraft(
+  agentType: string,
+  toolName: string,
+  input: q.AdminPromptToolOverrideDraftInput,
+): Promise<q.AdminPromptToolOverrideDraftResponse> {
+  return request.post(endpoints.adminPromptsToolDraft(agentType, toolName), input);
+}
+
+export function publishAdminPromptToolOverride(
+  agentType: string,
+  toolName: string,
+  input: q.AdminPromptToolOverridePublishInput,
+): Promise<q.AdminPromptToolOverridePublishResponse> {
+  return request.post(endpoints.adminPromptsToolPublish(agentType, toolName), input);
+}
+
+export function restoreAdminPromptToolOverride(
+  agentType: string,
+  toolName: string,
+  input: q.AdminPromptToolOverrideRestoreInput,
+): Promise<q.AdminPromptToolOverrideRestoreResponse> {
+  return request.post(endpoints.adminPromptsToolRestore(agentType, toolName), input);
+}
+
+export function clearAdminPromptToolOverride(
+  agentType: string,
+  toolName: string,
+): Promise<q.AdminPromptToolOverrideClearResponse> {
+  return request.post(endpoints.adminPromptsToolClear(agentType, toolName));
+}
+
 /* --- Admin Sources --- */
 export function getAdminSources(): Promise<q.AdminSourcesResponse> {
   return request.get(endpoints.adminSources());

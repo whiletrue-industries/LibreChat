@@ -29,5 +29,6 @@ router.get('/:agent/tools/:toolName/versions', controller.listToolOverrideVersio
 router.post('/:agent/tools/:toolName/draft', controller.saveToolOverrideDraft);
 router.post('/:agent/tools/:toolName/publish', controller.publishToolOverride);
 router.post('/:agent/tools/:toolName/restore', controller.restoreToolOverride);
+router.post('/:agent/tools/:toolName/clear', controller.clearToolOverride);
 
 module.exports = router;
