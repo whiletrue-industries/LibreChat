@@ -161,6 +161,32 @@ Multi-line imports count total character length across all lines. Consolidate va
 
 ---
 
+## Unified Prompt Editor (post-2026-05-07)
+
+The unified bot's owner edits the WHOLE system prompt as a single document at `/d/agent-prompts/<bot>` — a textarea pre-populated by `GET /api/admin/prompts/<bot>/joined`. Saving splits the joined text on `<!-- SECTION_KEY: ... -->` markers (parser at `packages/api/src/admin/prompts/parse.ts`) and writes one draft per section, all-or-nothing transactional via the rebuilding-bots Aurora-backed prompt-section API.
+
+### Draft chat flow (D3 design)
+
+A separate Agent record `<bot> — DRAFT` lives in Mongo with `draft: true`. On every save the controller calls `services/AdminPrompts/draftAgent.js:refreshDraftAgentForBot(bot)` to re-compose `instructions` and `tool_overrides` from the latest draft+active mix and upsert the DRAFT doc. The "Try draft" button in the admin UI opens `/c/new?agent_id=<draftAgentId>` — admin-only.
+
+### `restrictDraftAgent` middleware
+
+`api/server/middleware/restrictDraftAgent.js` blocks any non-admin from selecting an agent with `draft: true`. Inserted in `routes/agents/chat.js` after agent resolution and before LLM invocation. Returns 403 with a clean message; admins pass through. This is the only thing keeping draft agents private — do not bypass it.
+
+### Seed-script extension
+
+`scripts/seed-botnim-agent.js` upserts BOTH the canonical agent and its `<bot> — DRAFT` mirror on every run. Idempotent: re-running the seed never creates duplicates. Both share `provider`, `model`, `model_parameters`, `actions[]`. Only the DRAFT has `draft: true`. Each has its own LibreChat agent `id` (Agent IDs are unique by schema). Phase 9 of `parlibot/deploy.sh` runs this seed inside the LibreChat task on every deploy.
+
+### Tool description overrides
+
+`ToolOverridesTable` on the same admin page edits `agent_tool_overrides` rows in Aurora (rb-side table). The UI fetches canonical defaults via `services/AdminPrompts/canonicalTools.js`, which calls rb's `/botnim/config/<bot>?environment=<env>` endpoint. On save, the same `refreshDraftAgentForBot` mirror updates immediately so the draft chat reflects the override before any sync runs.
+
+### Snapshots / rollback
+
+`agent_prompt_snapshots` is an Aurora view that buckets section history by minute (`date_trunc`). Rollback iterates over `section_version_ids` and calls the existing `aurora.restore` per section in one transaction. Granularity = 1 minute; two publishes within the same minute collapse into one snapshot — accepted v1 tradeoff.
+
+---
+
 ## Formatting
 
 Fix all formatting lint errors (trailing spaces, tabs, newlines, indentation) using auto-fix when available. All TypeScript/ESLint warnings and errors **must** be resolved.
