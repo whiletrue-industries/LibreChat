@@ -19,6 +19,9 @@
  *      chat now DOES quote the sentinel — proving the published prompt
  *      reached the LLM.
  */
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { test, expect } from '@playwright/test';
 import {
   ADMIN_PROMPTS_AGENT,
@@ -78,6 +81,32 @@ test.describe('UPE DoD — round trip', () => {
       original,
       'SECTION_KEY markers are an internal artifact and must not appear in the UI',
     ).not.toContain('<!-- SECTION_KEY:');
+
+    // Step 1b — DEFENSIVE BACKUP. The test publishes a sentinel-bearing
+    // prompt to canonical (steps 5 below), and Step 6 republishes the
+    // pre-test prompt to restore. If the test crashes between Step 5 and
+    // Step 6, real users keep seeing the sentinel-bearing prompt until
+    // an operator manually republishes. Save the pre-test prompt to a
+    // timestamped file on disk so manual recovery is one paste away:
+    //
+    //   curl -X POST .../api/admin/prompts/unified/joined/draft  -d @<file>
+    //   <click Publish in admin UI, or POST /joined/publish>
+    //
+    // The path is logged so the operator running this test sees it in
+    // the spec output even if Playwright kills the process.
+    const tsTag = new Date().toISOString().replace(/[:.]/g, '-');
+    const targetTag = (ADMIN_PROMPTS_URL.replace(/^https?:\/\//, '').replace(/[^a-zA-Z0-9]/g, '_')) || 'env';
+    const backupPath = path.join(
+      os.tmpdir(),
+      `upe-${targetTag}-${ADMIN_PROMPTS_AGENT}-${tsTag}.prompt.txt`,
+    );
+    fs.writeFileSync(backupPath, original, { encoding: 'utf-8' });
+    // eslint-disable-next-line no-console
+    console.log(`[round-trip] PRE-TEST PROMPT BACKED UP TO: ${backupPath}`);
+    expect(
+      fs.readFileSync(backupPath, { encoding: 'utf-8' }),
+      'backup file must round-trip the pre-test prompt exactly',
+    ).toBe(original);
 
     // Step 2 — append an explicit "always include this token" instruction
     // to the prompt and save as a draft. The instruction is phrased to
@@ -181,13 +210,21 @@ test.describe('UPE DoD — round trip', () => {
     // the pre-test prompt and publish it before the test exits. Without
     // this, every reply real users receive after this test runs will
     // include the sentinel until an admin manually republishes.
+    //
+    // Read the pre-test prompt from the on-disk backup (step 1b) rather
+    // than from `original` in memory — this guarantees the restored body
+    // is byte-for-byte identical to what GET /joined returned at the
+    // start, even if anyone tampered with the in-memory string.
+    const restoredFromDisk = fs.readFileSync(backupPath, { encoding: 'utf-8' });
+    expect(restoredFromDisk).toBe(original);
+
     await page.goto(
       `${ADMIN_PROMPTS_URL}/d/agent-prompts/${encodeURIComponent(ADMIN_PROMPTS_AGENT)}`,
       { waitUntil: 'domcontentloaded' },
     );
     await waitForJoinedTextarea(page);
     const cleanupTextarea = page.getByTestId('unified-prompt-textarea');
-    await cleanupTextarea.fill(original);
+    await cleanupTextarea.fill(restoredFromDisk);
     await page
       .getByRole('button', { name: /Save draft|שמור טיוטה/i })
       .click();
@@ -211,5 +248,11 @@ test.describe('UPE DoD — round trip', () => {
       afterCleanup,
       'cleanup publish must remove the sentinel from the active prompt',
     ).not.toContain(sentinel);
+
+    // Cleanup succeeded — backup file is no longer needed for emergency
+    // recovery. Leave it on disk anyway; it's a small text file and the
+    // operator may want it for forensics.
+    // eslint-disable-next-line no-console
+    console.log(`[round-trip] cleanup successful; pre-test prompt restored. Backup retained at: ${backupPath}`);
   });
 });
