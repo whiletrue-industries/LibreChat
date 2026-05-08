@@ -200,10 +200,37 @@ export async function fetchDraftAgentId(
   page: Page,
   agentSlug: string,
 ): Promise<string | null> {
+  // /joined is JWT-gated by `requireJwtAuth`. The access token is NOT
+  // in cookies and NOT in localStorage on LibreChat (the page keeps it
+  // in React state and attaches it via an axios interceptor). The
+  // simplest reliable path from a Playwright test is to log in once
+  // more via `/api/auth/login` (the same admin creds we already have),
+  // pull the `token` field out of the JSON, and send it as
+  // `Authorization: Bearer <token>` on /joined. The login is cheap and
+  // idempotent. Throws on non-2xx so failures aren't silent.
+  const loginResp = await page.request.post(`${ADMIN_PROMPTS_URL}/api/auth/login`, {
+    headers: { 'Content-Type': 'application/json' },
+    data: { email: ADMIN_PROMPTS_USER, password: ADMIN_PROMPTS_PASSWORD },
+  });
+  if (!loginResp.ok()) {
+    throw new Error(
+      `auth login for fetchDraftAgentId failed: ${loginResp.status()} ${await loginResp.text()}`,
+    );
+  }
+  const loginJson = (await loginResp.json()) as { token?: string };
+  const token = loginJson.token;
+  if (!token) {
+    throw new Error('auth login did not return a token field');
+  }
   const resp = await page.request.get(
     `${ADMIN_PROMPTS_URL}/api/admin/prompts/${encodeURIComponent(agentSlug)}/joined`,
+    { headers: { Authorization: `Bearer ${token}` } },
   );
-  if (!resp.ok()) return null;
+  if (!resp.ok()) {
+    throw new Error(
+      `GET /joined returned ${resp.status()}; first 200 chars: ${(await resp.text()).slice(0, 200)}`,
+    );
+  }
   const json = (await resp.json()) as { draftAgentId?: string | null };
   return json.draftAgentId ?? null;
 }
