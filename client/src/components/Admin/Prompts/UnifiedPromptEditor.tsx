@@ -99,7 +99,12 @@ export default function UnifiedPromptEditor() {
 
   return (
     <main
-      className="mx-auto w-full max-w-7xl bg-surface-primary p-6 text-text-primary"
+      // The dashboard layout (`routes/Layouts/Dashboard.tsx`) wraps
+      // <Outlet /> in `overflow-hidden`, so this element must own its
+      // own scrollbar. `h-full` matches the parent's height; `overflow-y-auto`
+      // lets the prompt textarea + tool overrides table scroll within
+      // the viewport instead of being clipped at the bottom.
+      className="mx-auto h-full w-full max-w-7xl overflow-y-auto bg-surface-primary p-6 text-text-primary"
       dir="ltr"
     >
       <div className="mb-4 flex items-center justify-between">
