@@ -119,6 +119,15 @@ module "librechat_api" {
 
     BOTNIM_AGENT_ID_UNIFIED = var.botnim_agent_id_unified
 
+    # Service Connect alias for the rebuilding-bots FastAPI inside the
+    # cluster. LibreChat's `services/AdminPrompts/canonicalTools.js` calls
+    # ${BOTNIM_API_BASE}/botnim/config/<bot> to fetch the canonical tool
+    # list (name + default description) for the unified prompt editor's
+    # ToolOverridesTable. Without this set, fetchCanonicalTools() returns
+    # an empty map and the table renders "no tools to display". The alias
+    # mirrors the librechat.yaml.tpl `actions.allowedDomains` entry.
+    BOTNIM_API_BASE = "http://botnim-api:8000"
+
     # Hide the "Help & FAQ" entry from the account-settings menu.
     # LibreChat's frontend skips rendering that entry when the URL is "/"
     # (see client/src/components/Nav/AccountSettings.tsx). The default
