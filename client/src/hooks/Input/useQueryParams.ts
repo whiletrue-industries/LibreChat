@@ -83,6 +83,31 @@ export default function useQueryParams({
         return;
       }
       let newPreset = removeUnavailableTools(_newPreset, availableTools);
+      // When the URL carries an `agent_id` (or `assistant_id`) but no
+      // explicit `spec`, look up the matching modelSpec by its
+      // `preset.agent_id` (or `preset.assistant_id`) and inject its
+      // name as `spec`. With `modelSpecs.enforce: true` the chat send
+      // is rejected by `buildEndpointOption` until a `spec` is set, so
+      // a URL like `/c/new?agent_id=<X>` was previously hanging the
+      // chat input even though `<X>` matched a known modelSpec.
+      if ((newPreset.spec == null || newPreset.spec === '')
+          && (newPreset.agent_id || newPreset.assistant_id)) {
+        const startupConfig = queryClient.getQueryData<TStartupConfig>([QueryKeys.startupConfig]);
+        const modelSpecs = startupConfig?.modelSpecs?.list ?? [];
+        const matched = modelSpecs.find((s) => {
+          const preset = s.preset || {};
+          if (newPreset.agent_id && preset.agent_id === newPreset.agent_id) {
+            return true;
+          }
+          if (newPreset.assistant_id && preset.assistant_id === newPreset.assistant_id) {
+            return true;
+          }
+          return false;
+        });
+        if (matched) {
+          newPreset.spec = matched.name;
+        }
+      }
       if (newPreset.spec != null && newPreset.spec !== '') {
         const startupConfig = queryClient.getQueryData<TStartupConfig>([QueryKeys.startupConfig]);
         const modelSpecs = startupConfig?.modelSpecs?.list ?? [];
@@ -255,9 +280,6 @@ export default function useQueryParams({
 
       attemptsRef.current += 1;
 
-      if (!textAreaRef.current) {
-        return;
-      }
       const startupConfig = queryClient.getQueryData<TStartupConfig>([QueryKeys.startupConfig]);
       if (!startupConfig) {
         return;
@@ -265,6 +287,20 @@ export default function useQueryParams({
 
       const { decodedPrompt, validSettings, shouldAutoSubmit } = processQueryParams();
       const hasSettings = Object.keys(validSettings).length > 0;
+
+      // Apply settings (e.g., modelSpec selection from `?agent_id=<X>`)
+      // BEFORE waiting for the textarea. With `modelSpecs.enforce: true`,
+      // the textarea never renders until a modelSpec is selected — so
+      // gating settings application on `textAreaRef.current` is a
+      // deadlock for URLs whose only purpose is to switch the agent.
+      if (hasSettings && !areSettingsApplied()) {
+        validSettingsRef.current = validSettings;
+        newQueryConvo(validSettings);
+      }
+
+      if (!textAreaRef.current) {
+        return;
+      }
 
       if (!shouldAutoSubmit) {
         submissionHandledRef.current = true;
