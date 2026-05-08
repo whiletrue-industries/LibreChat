@@ -182,19 +182,67 @@ function loadOpenApiSpecs() {
   // backend and must be rewritten per env. budgetkey + takanon point
   // at external services and are intentionally NOT in this list.
   const BOTNIM_OWNED_SPECS = new Set(['botnim', 'generate_word_doc']);
-  return files.map((f) => {
-    let raw = fs.readFileSync(path.join(dir, f), 'utf8');
+  const raw = files.map((f) => {
+    let body = fs.readFileSync(path.join(dir, f), 'utf8');
     const name = path.basename(f, path.extname(f));
     if (BOTNIM_OWNED_SPECS.has(name) && botnimOverride) {
-      const parsed = yaml.load(raw);
+      const parsed = yaml.load(body);
       if (parsed?.servers?.length) {
         parsed.servers[0].url = botnimOverride;
-        raw = JSON.stringify(parsed, null, 2);
+        body = JSON.stringify(parsed, null, 2);
         console.log(`[seed] ${name} spec server rewritten → ${botnimOverride}`);
       }
     }
-    return { name, raw, path: path.join(dir, f) };
+    return { name, raw: body, path: path.join(dir, f) };
   });
+  return mergeSameDomainSpecs(raw);
+}
+
+// LibreChat's `POST /api/agents/actions/:agent_id` removes ALL existing
+// agent.tools whose name contains the action's encodedDomain BEFORE
+// concatenating the new functions (api/server/routes/agents/actions.js
+// lines ~173-184). Two of our specs (`botnim` and `generate_word_doc`)
+// both target the SEED_BOTNIM_API_BASE host, so registering them as
+// separate actions makes the second wipe out the first's 18 retrieval
+// functions. The fix is to merge same-server-url specs into a single
+// OpenAPI document before registering, so they go up as ONE action with
+// the union of their paths.
+function mergeSameDomainSpecs(specs) {
+  const byServerUrl = new Map();
+  const ordered = [];
+  for (const s of specs) {
+    let serverUrl = '';
+    try {
+      const parsed = yaml.load(s.raw);
+      serverUrl = parsed?.servers?.[0]?.url || '';
+    } catch (_) {
+      serverUrl = '';
+    }
+    if (!serverUrl) {
+      ordered.push(s);
+      continue;
+    }
+    if (byServerUrl.has(serverUrl)) {
+      const target = byServerUrl.get(serverUrl);
+      const targetParsed = JSON.parse(target.raw);
+      const sourceParsed = yaml.load(s.raw);
+      targetParsed.paths = { ...(targetParsed.paths || {}), ...(sourceParsed.paths || {}) };
+      const targetSchemas = (targetParsed.components && targetParsed.components.schemas) || {};
+      const sourceSchemas = (sourceParsed.components && sourceParsed.components.schemas) || {};
+      const mergedSchemas = { ...targetSchemas, ...sourceSchemas };
+      if (Object.keys(mergedSchemas).length > 0) {
+        targetParsed.components = { ...(targetParsed.components || {}), schemas: mergedSchemas };
+      }
+      target.raw = JSON.stringify(targetParsed, null, 2);
+      target.name = `${target.name}+${s.name}`;
+      console.log(`[seed] merged spec ${s.name} into ${target.name.split('+')[0]} (same server ${serverUrl})`);
+      continue;
+    }
+    const cloned = { ...s, raw: JSON.stringify(yaml.load(s.raw), null, 2) };
+    byServerUrl.set(serverUrl, cloned);
+    ordered.push(cloned);
+  }
+  return ordered;
 }
 
 function parseSpecServerUrl(rawSpec) {

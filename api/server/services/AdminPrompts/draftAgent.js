@@ -62,8 +62,7 @@ async function composeDraftPayload(bot) {
     logger.warn('[draftAgent] fetchCanonicalTools failed; using empty canonical map', err);
   }
   const toolOverrides = await aurora.listLatestDraftOrActiveToolDescriptions(bot, canonicalTools);
-  const tools = Object.keys(toolOverrides);
-  return { instructions, tools, toolOverrides };
+  return { instructions, toolOverrides };
 }
 
 // Upsert the draft Agent doc for `bot`. Returns the updated/created doc.
@@ -75,7 +74,7 @@ async function composeDraftPayload(bot) {
 // Side-effect free if `instructions` and `tools`/`toolOverrides` match what is
 // already on the doc — Mongo upsert is a write either way, but the data is
 // equivalent.
-async function ensureDraftAgent({ bot, instructions, tools, toolOverrides, Agent }) {
+async function ensureDraftAgent({ bot, instructions, toolOverrides, Agent }) {
   if (!Agent) {
     Agent = require('~/db/models').Agent;
   }
@@ -90,6 +89,13 @@ async function ensureDraftAgent({ bot, instructions, tools, toolOverrides, Agent
     );
   }
 
+  // The DRAFT agent must mirror canonical's actual `tools[]` (the
+  // namespaced tool names like `search_unified__legal_text_action_<...>`)
+  // — those are the only thing LibreChat resolves at chat time when the
+  // LLM picks a tool. The `tools` argument from composeDraftPayload is
+  // the list of OVERRIDE keys (descriptions only), which is a subset
+  // shaped completely differently. Take canonical.tools verbatim; rely
+  // on `tool_overrides` to convey description differences.
   const update = {
     name: draftName,
     description: canonical.description,
@@ -97,7 +103,7 @@ async function ensureDraftAgent({ bot, instructions, tools, toolOverrides, Agent
     provider: canonical.provider,
     model: canonical.model,
     model_parameters: canonical.model_parameters,
-    tools: tools || [],
+    tools: canonical.tools || [],
     tool_overrides: toolOverrides || {},
     actions: canonical.actions,
     author: canonical.author,
@@ -132,7 +138,6 @@ async function refreshDraftAgentForBot(bot) {
     return await ensureDraftAgent({
       bot,
       instructions: payload.instructions,
-      tools: payload.tools,
       toolOverrides: payload.toolOverrides,
     });
   } catch (err) {
