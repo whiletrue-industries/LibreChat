@@ -123,6 +123,27 @@ const agentSchema = new Schema<IAgent>(
       type: Schema.Types.Mixed,
       default: undefined,
     },
+    /**
+     * Marks an Agent as a draft mirror managed by AdminPrompts/draftAgent.
+     * Draft agents share the OpenAI Assistant id with their canonical
+     * sibling but carry overridden instructions / tool descriptions for
+     * preview chat. The `restrictDraftAgent` middleware blocks non-admin
+     * users from selecting a draft agent.
+     */
+    draft: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    /**
+     * Per-tool description overrides applied to the draft Agent. Map keyed
+     * by tool name → override description string. Only populated on draft
+     * mirrors; canonical agents leave this undefined.
+     */
+    tool_overrides: {
+      type: Schema.Types.Mixed,
+      default: undefined,
+    },
   },
   {
     timestamps: true,

@@ -1,5 +1,6 @@
 const validatePasswordReset = require('./validatePasswordReset');
 const validateRegistration = require('./validateRegistration');
+const restrictDraftAgent = require('./restrictDraftAgent');
 const buildEndpointOption = require('./buildEndpointOption');
 const validateMessageReq = require('./validateMessageReq');
 const checkDomainAllowed = require('./checkDomainAllowed');
@@ -36,6 +37,7 @@ module.exports = {
   moderateText,
   validateModel,
   requireJwtAuth,
+  restrictDraftAgent,
   checkInviteUser,
   requireLdapAuth,
   requireLocalAuth,

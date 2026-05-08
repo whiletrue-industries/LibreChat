@@ -10,6 +10,7 @@ import {
   PromptsDashboard,
   PromptEditor,
   PromptSectionList,
+  UnifiedPromptEditor,
 } from '~/components/Admin/Prompts';
 import { SourcesDashboard } from '~/components/Admin/Sources';
 import DashboardRoute from './Layouts/Dashboard';
@@ -89,10 +90,14 @@ const dashboardRoutes = {
     },
     {
       path: 'agent-prompts/:agent',
+      element: <UnifiedPromptEditor />,
+    },
+    {
+      path: 'agent-prompts/:agent/sections',
       element: <PromptSectionList />,
     },
     {
-      path: 'agent-prompts/:agent/:key',
+      path: 'agent-prompts/:agent/sections/:key',
       element: <PromptEditor />,
     },
     {

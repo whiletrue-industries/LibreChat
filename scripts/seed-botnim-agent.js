@@ -21,8 +21,17 @@
  *   SEED_ADMIN_PASSWORD (default admin123)
  *   SEED_API_BASE       (default http://localhost:3080)
  *   SEED_AGENT_NAME     (default "בוט מאוחד - תקנון, חוקים ותקציב")
+ *   SEED_AGENT_BOT      (default unified) — agent_type used by the AdminPrompts
+ *                        draft-mirror upsert (must match Aurora agent_prompts
+ *                        rows for the canonical agent)
  *   SEED_MODEL          (default gpt-5.4-mini)
  *   SEED_SPECS_DIR      (default /srv/specs)
+ *   MONGO_URI           — required for the global-share + draft-mirror steps;
+ *                        if unset both are skipped with a warning
+ *   BOTNIM_API_BASE     — optional; canonical tool descriptions are fetched
+ *                        from `${BOTNIM_API_BASE}/botnim/config/<bot>` to
+ *                        seed the draft mirror's tool_overrides map. Falls
+ *                        back to an empty map when unset.
  *   DATABASE_URL        — Aurora connection (required unless DB_HOST/etc are set)
  *   DB_HOST             — Aurora host (use with DB_USER, DB_PASSWORD, DB_PORT, DB_NAME)
  */
@@ -32,9 +41,23 @@ const path = require('path');
 const yaml = require('js-yaml');
 const mongoose = require('mongoose');
 
+// Register the `~` → api/ module alias used by api/server code we
+// pull in (e.g. draftAgent.js requires `~/server/...` and `~/db/models`).
+// Mirrors api/server/index.js bootstrap.
+require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
+
 const { openapiToFunction, validateAndParseOpenAPISpec } =
   require('librechat-data-provider');
 const aurora = require(path.resolve(__dirname, '..', 'api', 'server', 'services', 'AdminPrompts', 'aurora'));
+const draftAgentService = require(path.resolve(
+  __dirname,
+  '..',
+  'api',
+  'server',
+  'services',
+  'AdminPrompts',
+  'draftAgent',
+));
 const { AdminPrompts } = require('@librechat/api');
 
 const EMAIL = process.env.SEED_ADMIN_EMAIL || 'admin@botnim.local';
@@ -42,6 +65,7 @@ const PASSWORD = process.env.SEED_ADMIN_PASSWORD || 'admin123';
 const API = process.env.SEED_API_BASE || 'http://localhost:3080';
 const AGENT_NAME = process.env.SEED_AGENT_NAME ||
   'בוט מאוחד - תקנון, חוקים ותקציב';
+const AGENT_BOT = process.env.SEED_AGENT_BOT || 'unified';
 const MODEL = process.env.SEED_MODEL || 'gpt-5.4-mini';
 const SPECS_DIR = process.env.SEED_SPECS_DIR || '/srv/specs';
 
@@ -251,35 +275,65 @@ async function upsertAction(token, agentId, spec) {
 // link is in place. Direct Mongo update because LibreChat does not expose
 // a /api/projects route, so we can't do this via HTTP.
 async function shareAgentWithGlobalProject(agentId) {
+  const db = mongoose.connection.db;
+  const project = await db.collection('projects').findOne({ name: 'instance' });
+  if (!project) {
+    console.warn('[seed] no `instance` project found — skipping global share');
+    return;
+  }
+  const agent = await db.collection('agents').findOne({ id: agentId });
+  if (!agent) {
+    throw new Error(`agent ${agentId} not found in DB`);
+  }
+  const projectUpdate = await db.collection('projects').updateOne(
+    { _id: project._id },
+    { $addToSet: { agentIds: agent.id } },
+  );
+  const agentUpdate = await db.collection('agents').updateOne(
+    { _id: agent._id },
+    { $addToSet: { projectIds: project._id } },
+  );
+  console.log(
+    `[seed] global share: project_modified=${projectUpdate.modifiedCount} ` +
+      `agent_modified=${agentUpdate.modifiedCount} (0 means already linked)`,
+  );
+}
+
+// Upsert the "<canonical name> — DRAFT" mirror Agent doc (UPE Task 8,
+// spec §5.4). The mirror shares provider/model/model_parameters/actions
+// with the canonical agent; its `instructions` reflect the latest
+// draft-or-active joined prompt and its `tool_overrides` map carries
+// draft-or-active per-tool description overrides keyed by tool name.
+//
+// On a fresh stack with no in-flight drafts the mirror's instructions
+// equal the canonical's instructions. The doc is upserted by name so
+// re-running the seed never produces duplicates.
+async function ensureDraftAgentMirror() {
+  const { Agent } = require('~/db/models');
+  const { instructions, tools, toolOverrides } =
+    await draftAgentService.composeDraftPayload(AGENT_BOT);
+  const draft = await draftAgentService.ensureDraftAgent({
+    bot: AGENT_BOT,
+    instructions,
+    tools,
+    toolOverrides,
+    Agent,
+  });
+  console.log(
+    `[seed] draft mirror: id=${draft.id} name="${draft.name}" ` +
+      `tools=${(draft.tools || []).length} overrides=${Object.keys(draft.tool_overrides || {}).length}`,
+  );
+}
+
+async function withMongoConnection(fn) {
   const mongoUri = process.env.MONGO_URI;
   if (!mongoUri) {
-    console.warn('[seed] MONGO_URI not set — skipping global share step');
+    console.warn('[seed] MONGO_URI not set — skipping Mongo-dependent steps');
     return;
   }
   await mongoose.connect(mongoUri);
   try {
-    const db = mongoose.connection.db;
-    const project = await db.collection('projects').findOne({ name: 'instance' });
-    if (!project) {
-      console.warn('[seed] no `instance` project found — skipping global share');
-      return;
-    }
-    const agent = await db.collection('agents').findOne({ id: agentId });
-    if (!agent) {
-      throw new Error(`agent ${agentId} not found in DB`);
-    }
-    const projectUpdate = await db.collection('projects').updateOne(
-      { _id: project._id },
-      { $addToSet: { agentIds: agent.id } },
-    );
-    const agentUpdate = await db.collection('agents').updateOne(
-      { _id: agent._id },
-      { $addToSet: { projectIds: project._id } },
-    );
-    console.log(
-      `[seed] global share: project_modified=${projectUpdate.modifiedCount} ` +
-        `agent_modified=${agentUpdate.modifiedCount} (0 means already linked)`,
-    );
+    await fn();
   } finally {
     await mongoose.disconnect();
   }
@@ -333,12 +387,20 @@ async function main() {
     }
   }
 
-  try {
-    await shareAgentWithGlobalProject(agent.id);
-  } catch (err) {
-    console.error(`[seed] global share FAILED: ${err.message}`);
-    process.exitCode = 1;
-  }
+  await withMongoConnection(async () => {
+    try {
+      await shareAgentWithGlobalProject(agent.id);
+    } catch (err) {
+      console.error(`[seed] global share FAILED: ${err.message}`);
+      process.exitCode = 1;
+    }
+    try {
+      await ensureDraftAgentMirror();
+    } catch (err) {
+      console.error(`[seed] draft mirror FAILED: ${err.message}`);
+      process.exitCode = 1;
+    }
+  });
 
   console.log(`[seed] done.`);
 }

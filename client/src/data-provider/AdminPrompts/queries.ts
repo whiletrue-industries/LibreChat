@@ -16,6 +16,22 @@ import type {
   AdminPromptTestQuestionsResponse,
   AdminPromptTestQuestionPutInput,
   AdminPromptUsage,
+  AdminPromptJoinedResponse,
+  AdminPromptJoinedDraftInput,
+  AdminPromptJoinedDraftResponse,
+  AdminPromptJoinedPublishInput,
+  AdminPromptJoinedPublishResponse,
+  AdminPromptSnapshotsResponse,
+  AdminPromptSnapshotRestoreResponse,
+  AdminPromptToolOverridesResponse,
+  AdminPromptToolOverrideVersionsResponse,
+  AdminPromptToolOverrideDraftInput,
+  AdminPromptToolOverrideDraftResponse,
+  AdminPromptToolOverridePublishInput,
+  AdminPromptToolOverridePublishResponse,
+  AdminPromptToolOverrideRestoreInput,
+  AdminPromptToolOverrideRestoreResponse,
+  AdminPromptToolOverrideClearResponse,
 } from 'librechat-data-provider';
 
 export const useAdminPromptAgents = () =>
@@ -160,3 +176,185 @@ export const useAdminPromptVersionUsage = (
       ),
     { enabled: Boolean(versionId), staleTime: 5 * 60 * 1000 },
   );
+
+export const useJoinedPrompt = (agentType: string) =>
+  useQuery<AdminPromptJoinedResponse>(
+    [QueryKeys.adminPromptsJoined, agentType],
+    () => dataService.getAdminPromptJoined(agentType),
+    { enabled: Boolean(agentType) },
+  );
+
+export const useSaveJoinedDraft = (agentType: string) => {
+  const qc = useQueryClient();
+  return useMutation<
+    AdminPromptJoinedDraftResponse,
+    unknown,
+    AdminPromptJoinedDraftInput
+  >(
+    [MutationKeys.saveAdminPromptJoinedDraft, agentType],
+    (input) => dataService.saveAdminPromptJoinedDraft(agentType, input),
+    {
+      onSuccess: () => {
+        qc.invalidateQueries([QueryKeys.adminPromptsJoined, agentType]);
+        qc.invalidateQueries([QueryKeys.adminPromptsSections, agentType]);
+        qc.invalidateQueries([QueryKeys.adminPromptsAgents]);
+      },
+    },
+  );
+};
+
+export const usePublishJoinedDraft = (agentType: string) => {
+  const qc = useQueryClient();
+  return useMutation<
+    AdminPromptJoinedPublishResponse,
+    unknown,
+    AdminPromptJoinedPublishInput
+  >(
+    [MutationKeys.publishAdminPromptJoined, agentType],
+    (input) => dataService.publishAdminPromptJoined(agentType, input),
+    {
+      onSuccess: () => {
+        qc.invalidateQueries([QueryKeys.adminPromptsJoined, agentType]);
+        qc.invalidateQueries([QueryKeys.adminPromptsSections, agentType]);
+        qc.invalidateQueries([QueryKeys.adminPromptsSnapshots, agentType]);
+        qc.invalidateQueries([QueryKeys.adminPromptsAgents]);
+      },
+    },
+  );
+};
+
+export const useSnapshots = (agentType: string) =>
+  useQuery<AdminPromptSnapshotsResponse>(
+    [QueryKeys.adminPromptsSnapshots, agentType],
+    () => dataService.getAdminPromptSnapshots(agentType),
+    { enabled: Boolean(agentType) },
+  );
+
+export const useRestoreSnapshot = (agentType: string) => {
+  const qc = useQueryClient();
+  return useMutation<
+    AdminPromptSnapshotRestoreResponse,
+    unknown,
+    { minute: string }
+  >(
+    [MutationKeys.restoreAdminPromptSnapshot, agentType],
+    ({ minute }) => dataService.restoreAdminPromptSnapshot(agentType, minute),
+    {
+      onSuccess: () => {
+        qc.invalidateQueries([QueryKeys.adminPromptsJoined, agentType]);
+        qc.invalidateQueries([QueryKeys.adminPromptsSections, agentType]);
+        qc.invalidateQueries([QueryKeys.adminPromptsSnapshots, agentType]);
+      },
+    },
+  );
+};
+
+export const useToolOverrides = (agentType: string) =>
+  useQuery<AdminPromptToolOverridesResponse>(
+    [QueryKeys.adminPromptsTools, agentType],
+    () => dataService.getAdminPromptToolOverrides(agentType),
+    { enabled: Boolean(agentType) },
+  );
+
+export const useToolOverrideVersions = (
+  agentType: string,
+  toolName: string,
+  enabled = true,
+) =>
+  useQuery<AdminPromptToolOverrideVersionsResponse>(
+    [QueryKeys.adminPromptsToolVersions, agentType, toolName],
+    () => dataService.getAdminPromptToolOverrideVersions(agentType, toolName),
+    { enabled: enabled && Boolean(agentType && toolName) },
+  );
+
+export const useSaveToolOverrideDraft = (agentType: string) => {
+  const qc = useQueryClient();
+  return useMutation<
+    AdminPromptToolOverrideDraftResponse,
+    unknown,
+    { toolName: string; input: AdminPromptToolOverrideDraftInput }
+  >(
+    [MutationKeys.saveAdminPromptToolDraft, agentType],
+    ({ toolName, input }) =>
+      dataService.saveAdminPromptToolOverrideDraft(agentType, toolName, input),
+    {
+      onSuccess: (_data, vars) => {
+        qc.invalidateQueries([QueryKeys.adminPromptsTools, agentType]);
+        qc.invalidateQueries([
+          QueryKeys.adminPromptsToolVersions,
+          agentType,
+          vars.toolName,
+        ]);
+        qc.invalidateQueries([QueryKeys.adminPromptsJoined, agentType]);
+      },
+    },
+  );
+};
+
+export const usePublishToolOverride = (agentType: string) => {
+  const qc = useQueryClient();
+  return useMutation<
+    AdminPromptToolOverridePublishResponse,
+    unknown,
+    { toolName: string; input: AdminPromptToolOverridePublishInput }
+  >(
+    [MutationKeys.publishAdminPromptTool, agentType],
+    ({ toolName, input }) =>
+      dataService.publishAdminPromptToolOverride(agentType, toolName, input),
+    {
+      onSuccess: (_data, vars) => {
+        qc.invalidateQueries([QueryKeys.adminPromptsTools, agentType]);
+        qc.invalidateQueries([
+          QueryKeys.adminPromptsToolVersions,
+          agentType,
+          vars.toolName,
+        ]);
+      },
+    },
+  );
+};
+
+export const useRestoreToolOverride = (agentType: string) => {
+  const qc = useQueryClient();
+  return useMutation<
+    AdminPromptToolOverrideRestoreResponse,
+    unknown,
+    { toolName: string; input: AdminPromptToolOverrideRestoreInput }
+  >(
+    [MutationKeys.restoreAdminPromptTool, agentType],
+    ({ toolName, input }) =>
+      dataService.restoreAdminPromptToolOverride(agentType, toolName, input),
+    {
+      onSuccess: (_data, vars) => {
+        qc.invalidateQueries([QueryKeys.adminPromptsTools, agentType]);
+        qc.invalidateQueries([
+          QueryKeys.adminPromptsToolVersions,
+          agentType,
+          vars.toolName,
+        ]);
+      },
+    },
+  );
+};
+
+export const useClearToolOverride = (agentType: string) => {
+  const qc = useQueryClient();
+  return useMutation<
+    AdminPromptToolOverrideClearResponse,
+    unknown,
+    { toolName: string }
+  >(
+    [MutationKeys.clearAdminPromptTool, agentType],
+    ({ toolName }) => dataService.clearAdminPromptToolOverride(agentType, toolName),
+    {
+      onSuccess: (_data, vars) => {
+        qc.invalidateQueries([QueryKeys.adminPromptsTools, agentType]);
+        qc.invalidateQueries([
+          QueryKeys.adminPromptsToolVersions,
+          agentType,
+          vars.toolName,
+        ]);
+      },
+    },
+  );
+};

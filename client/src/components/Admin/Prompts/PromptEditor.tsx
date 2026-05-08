@@ -47,6 +47,7 @@ export default function PromptEditor() {
     navigate('/d/agent-prompts', { replace: true });
     return null;
   }
+  const sectionsHref = `/d/agent-prompts/${agent}/sections`;
   if (sectionsQ.isLoading || !sectionsQ.data) {
     return <div className="p-8 text-center">…</div>;
   }
@@ -95,7 +96,7 @@ export default function PromptEditor() {
           <span className="mx-2 text-text-secondary">—</span>
           <span>{localize(`com_admin_prompts_agent_${agent}` as LocalizeKey)}</span>
         </h1>
-        <Link to={`/d/agent-prompts/${agent}`} className="text-sm underline">
+        <Link to={sectionsHref} className="text-sm underline">
           ← {localize('com_admin_prompts_sections')}
         </Link>
       </div>

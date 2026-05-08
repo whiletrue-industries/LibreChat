@@ -434,6 +434,123 @@ export interface AdminPromptUsage {
   conversations: AdminPromptUsageConversation[];
 }
 
+export interface AdminPromptJoinedVersion {
+  sectionKey: string;
+  ordinal: number;
+  versionId: string;
+}
+
+export interface AdminPromptJoinedResponse {
+  source: 'aurora';
+  joinedText: string;
+  versions: AdminPromptJoinedVersion[];
+  hasDraft: boolean;
+  draftAgentId: string | null;
+}
+
+export interface AdminPromptJoinedDraftInput {
+  joinedText: string;
+  changeNote?: string;
+}
+
+export interface AdminPromptJoinedDraftResponse {
+  drafts: AdminPromptSection[];
+  summary: { sectionsTouched: number; sectionsTotal: number };
+  draftAgentId: string | null;
+  hasDraft: boolean;
+}
+
+export interface AdminPromptJoinedPublishInput {
+  changeNote: string;
+}
+
+export interface AdminPromptJoinedPublishResponse {
+  active: AdminPromptSection[];
+  summary: { sectionsPublished: number };
+}
+
+export interface AdminPromptSnapshot {
+  agentType: AdminPromptAgentType;
+  snapshotMinute: string;
+  sectionVersionIds: string[];
+  sectionKeys: string[];
+  publishedBy: string | null;
+}
+
+export interface AdminPromptSnapshotsResponse {
+  snapshots: AdminPromptSnapshot[];
+}
+
+export interface AdminPromptSnapshotRestoreResponse {
+  active: AdminPromptSection[];
+  summary: { sectionsRestored: number };
+}
+
+export interface AdminPromptToolOverrideRow {
+  id: number;
+  agentType: AdminPromptAgentType;
+  toolName: string;
+  description: string;
+  active: boolean;
+  isDraft: boolean;
+  parentVersionId: number | null;
+  changeNote: string | null;
+  createdAt: string;
+  createdBy: string | null;
+  publishedAt: string | null;
+}
+
+export interface AdminPromptToolOverrideActive {
+  id: number;
+  description: string;
+  publishedAt: string | null;
+}
+
+export interface AdminPromptToolOverrideEntry {
+  toolName: string;
+  defaultDescription: string;
+  override: AdminPromptToolOverrideActive | null;
+}
+
+export interface AdminPromptToolOverridesResponse {
+  tools: AdminPromptToolOverrideEntry[];
+}
+
+export interface AdminPromptToolOverrideVersionsResponse {
+  versions: AdminPromptToolOverrideRow[];
+}
+
+export interface AdminPromptToolOverrideDraftInput {
+  description: string;
+  changeNote?: string;
+}
+
+export interface AdminPromptToolOverrideDraftResponse {
+  draft: AdminPromptToolOverrideRow;
+}
+
+export interface AdminPromptToolOverridePublishInput {
+  draftId: number;
+  parentVersionId: number | null;
+  changeNote: string;
+}
+
+export interface AdminPromptToolOverridePublishResponse {
+  active: AdminPromptToolOverrideRow;
+}
+
+export interface AdminPromptToolOverrideRestoreInput {
+  versionId: number;
+}
+
+export interface AdminPromptToolOverrideRestoreResponse {
+  active: AdminPromptToolOverrideRow;
+}
+
+export interface AdminPromptToolOverrideClearResponse {
+  cleared: AdminPromptToolOverrideRow | null;
+}
+
 /* --- Admin Sources --- */
 export interface SparklinePoint {
   at: string;

@@ -44,4 +44,8 @@ export interface IAgent extends Omit<Document, 'model'> {
   mcpServerNames?: string[];
   /** Per-tool configuration (defer_loading, allowed_callers) */
   tool_options?: AgentToolOptions;
+  /** Marks an Agent as a draft mirror managed by AdminPrompts/draftAgent. */
+  draft?: boolean;
+  /** Per-tool description overrides applied to the draft Agent (toolName → description). */
+  tool_overrides?: Record<string, string>;
 }
