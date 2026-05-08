@@ -13,6 +13,47 @@ import ToolOverridesTable from './ToolOverridesTable';
 type LocalizeKey = Parameters<ReturnType<typeof useLocalize>>[0];
 const VALID: ReadonlyArray<'unified'> = ['unified'];
 
+const MARKER_RE = /^<!-- SECTION_KEY: ([^>]+) -->$/gm;
+
+interface Section {
+  sectionKey: string;
+  body: string;
+}
+
+/**
+ * Split the marker-ful joined text returned by the server (which uses
+ * `<!-- SECTION_KEY: … -->` markers as section separators) into a clean
+ * `Section[]`. The markers are an internal serialization artifact —
+ * users never see them; the UI renders one textarea per section.
+ */
+function splitSections(joinedText: string): Section[] {
+  const matches = [...joinedText.matchAll(MARKER_RE)];
+  if (!matches.length) {
+    return [];
+  }
+  const sections: Section[] = [];
+  for (let i = 0; i < matches.length; i++) {
+    const m = matches[i];
+    const start = (m.index ?? 0) + m[0].length;
+    const end =
+      i + 1 < matches.length ? (matches[i + 1].index ?? joinedText.length) : joinedText.length;
+    const body = joinedText
+      .slice(start, end)
+      .replace(/^\s*\n+/, '')
+      .replace(/\s*\n+---\s*\n+$/, '')
+      .replace(/\s+$/, '');
+    sections.push({ sectionKey: m[1].trim(), body });
+  }
+  return sections;
+}
+
+/** Inverse: rebuild the marker-ful blob the server's parse.ts expects. */
+function joinSections(sections: Section[]): string {
+  return sections
+    .map((s) => `<!-- SECTION_KEY: ${s.sectionKey} -->\n\n${s.body}`)
+    .join('\n\n---\n\n');
+}
+
 export default function UnifiedPromptEditor() {
   const localize = useLocalize();
   const navigate = useNavigate();
@@ -22,7 +63,8 @@ export default function UnifiedPromptEditor() {
   const saveDraft = useSaveJoinedDraft(agent ?? '');
   const publish = usePublishJoinedDraft(agent ?? '');
 
-  const [text, setText] = useState('');
+  const [sections, setSections] = useState<Section[]>([]);
+  const [initialSections, setInitialSections] = useState<Section[]>([]);
   const [changeNote, setChangeNote] = useState('');
   const [snapshotsOpen, setSnapshotsOpen] = useState(false);
   const [draftAgentId, setDraftAgentId] = useState<string | null>(null);
@@ -34,7 +76,11 @@ export default function UnifiedPromptEditor() {
 
   useEffect(() => {
     if (joinedQ.data) {
-      setText((current) => (current === '' ? joinedQ.data!.joinedText : current));
+      const fresh = splitSections(joinedQ.data.joinedText);
+      // Only seed local state on the initial load; later refetches don't
+      // overwrite in-progress edits.
+      setSections((current) => (current.length === 0 ? fresh : current));
+      setInitialSections((current) => (current.length === 0 ? fresh : current));
       setDraftAgentId(joinedQ.data.draftAgentId);
       setHasDraft(joinedQ.data.hasDraft);
     }
@@ -56,12 +102,18 @@ export default function UnifiedPromptEditor() {
     return <div className="p-8 text-center text-red-600">{message}</div>;
   }
 
-  const isDirty = text !== joinedQ.data.joinedText;
+  const isDirty =
+    sections.length !== initialSections.length ||
+    sections.some((s, i) => s.body !== initialSections[i]?.body);
+
+  const updateBody = (idx: number, body: string) => {
+    setSections((current) => current.map((s, i) => (i === idx ? { ...s, body } : s)));
+  };
 
   const handleSaveDraft = () => {
     setSaveSummary(null);
     saveDraft.mutate(
-      { joinedText: text, changeNote: changeNote || undefined },
+      { joinedText: joinSections(sections), changeNote: changeNote || undefined },
       {
         onSuccess: (data) => {
           setDraftAgentId(data.draftAgentId);
@@ -83,6 +135,9 @@ export default function UnifiedPromptEditor() {
           setHasDraft(false);
           setChangeNote('');
           setSaveSummary(null);
+          // Refresh local snapshot of "active" so future isDirty math
+          // uses the just-published bodies as the baseline.
+          setInitialSections(sections);
         },
       },
     );
@@ -94,7 +149,10 @@ export default function UnifiedPromptEditor() {
   };
 
   return (
-    <main className="mx-auto w-full max-w-7xl bg-surface-primary p-6 text-text-primary" dir="ltr">
+    <main
+      className="mx-auto w-full max-w-7xl bg-surface-primary p-6 text-text-primary"
+      dir="ltr"
+    >
       <div className="mb-4 flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold">
@@ -117,15 +175,26 @@ export default function UnifiedPromptEditor() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_320px]">
-        <div className="flex flex-col gap-3">
-          <textarea
-            data-testid="unified-prompt-textarea"
-            aria-label={localize('com_admin_prompts_unified_editor_title')}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            className="min-h-[60vh] w-full rounded border border-border-medium bg-surface-primary-alt p-3 font-mono text-sm leading-6 text-text-primary"
-            spellCheck={false}
-          />
+        <div className="flex flex-col gap-4">
+          {sections.map((s, i) => (
+            <div key={s.sectionKey} className="flex flex-col gap-1">
+              <label
+                htmlFor={`section-${s.sectionKey}`}
+                className="font-mono text-xs uppercase tracking-wider text-text-secondary"
+              >
+                {s.sectionKey}
+              </label>
+              <textarea
+                id={`section-${s.sectionKey}`}
+                data-testid={`section-textarea-${s.sectionKey}`}
+                aria-label={s.sectionKey}
+                value={s.body}
+                onChange={(e) => updateBody(i, e.target.value)}
+                className="min-h-[20vh] w-full rounded border border-border-medium bg-surface-primary-alt p-3 font-mono text-sm leading-6 text-text-primary"
+                spellCheck={false}
+              />
+            </div>
+          ))}
 
           <input
             type="text"

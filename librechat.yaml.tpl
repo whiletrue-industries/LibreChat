@@ -14,7 +14,14 @@ registration:
 
 interface:
   endpointsMenu: false
-  modelSelect: false
+  # modelSelect=true so a second modelSpec entry (the DRAFT mirror) is
+  # selectable from the dropdown for admins. Without this the dropdown
+  # is hidden and the only way to reach the draft is via URL params,
+  # which modelSpecs.enforce overrides — leaving no UI path to chat
+  # with the draft. Non-admins can still see the DRAFT entry in the
+  # dropdown but the restrictDraftAgent middleware (api/server/middleware/
+  # restrictDraftAgent.js) returns 403 if they pick it.
+  modelSelect: true
   parameters: true
   # Hide the right-side panel (agent builder, memories, attach files,
   # MCP settings). Botnim is a single-purpose chat product; the panel
@@ -87,3 +94,15 @@ modelSpecs:
       preset:
         endpoint: agents
         agent_id: ${BOTNIM_AGENT_ID_UNIFIED}
+    # Draft mirror — same OpenAI Assistant under the hood, but its
+    # `instructions` field is refreshed by `services/AdminPrompts/
+    # draftAgent.js:refreshDraftAgentForBot` after every save in the
+    # admin UI. Picked from the dropdown by admins to test prompt
+    # changes before publishing. Non-admins get 403 from the
+    # restrictDraftAgent middleware (server-side gate).
+    - name: botnim-unified-draft
+      label: "בוט מאוחד — DRAFT"
+      description: "טיוטה — לבדיקת שינויי פרומפט לפני פרסום (אדמין בלבד)"
+      preset:
+        endpoint: agents
+        agent_id: ${BOTNIM_AGENT_ID_UNIFIED_DRAFT}
