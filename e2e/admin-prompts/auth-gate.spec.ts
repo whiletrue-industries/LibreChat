@@ -19,7 +19,7 @@ import {
   ADMIN_PROMPTS_URL,
   ADMIN_PROMPTS_USER,
   ADMIN_PROMPTS_USER2,
-  appendToLastSection,
+  appendToUnifiedTextarea,
   askChatQuestion,
   fetchDraftAgentId,
   gotoLoginAndSignIn,
@@ -50,7 +50,7 @@ test.describe('UPE DoD — restrictDraftAgent middleware', () => {
       );
       await waitForJoinedTextarea(adminPage);
       const sentinel = makeSentinel('TEST_AUTH_GATE');
-      await appendToLastSection(adminPage, sentinel);
+      await appendToUnifiedTextarea(adminPage, sentinel);
       await adminPage
         .getByRole('button', { name: /Save draft|שמור טיוטה/i })
         .click();

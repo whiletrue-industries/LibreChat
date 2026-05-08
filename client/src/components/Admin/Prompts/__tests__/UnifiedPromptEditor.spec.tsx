@@ -20,12 +20,8 @@ const mockPublishMutate = jest.fn();
 
 const fixtureJoined = {
   source: 'aurora' as const,
-  joinedText:
-    '<!-- SECTION_KEY: preamble -->\noriginal preamble\n\n<!-- SECTION_KEY: rules -->\noriginal rules\n',
-  versions: [
-    { sectionKey: 'preamble', ordinal: 0, versionId: 'v-pre' },
-    { sectionKey: 'rules', ordinal: 1, versionId: 'v-rul' },
-  ],
+  joinedText: 'You are a unified assistant.\n\n## Rules\n- be concise\n- cite sources',
+  versions: [{ sectionKey: 'body', ordinal: 0, versionId: 'v-body' }],
   hasDraft: false,
   draftAgentId: 'agent_draft_123',
 };
@@ -75,36 +71,35 @@ describe('UnifiedPromptEditor', () => {
     window.open = originalOpen;
   });
 
-  it('renders one textarea per section, marker-free, pre-populated from /joined', () => {
+  it('renders a single textarea pre-populated from /joined, with no SECTION_KEY markers', () => {
     const { asFragment } = render(<UnifiedPromptEditor />);
-    const preamble = screen.getByTestId('section-textarea-preamble') as HTMLTextAreaElement;
-    const rules = screen.getByTestId('section-textarea-rules') as HTMLTextAreaElement;
-    expect(preamble.value).toBe('original preamble');
-    expect(rules.value).toBe('original rules');
-    // SECTION_KEY markers are an internal serialization artifact and must
-    // never bleed into the user-facing view.
-    expect(preamble.value).not.toMatch(/<!-- SECTION_KEY/);
-    expect(rules.value).not.toMatch(/<!-- SECTION_KEY/);
+    const textarea = screen.getByTestId('unified-prompt-textarea') as HTMLTextAreaElement;
+    expect(textarea.value).toBe(fixtureJoined.joinedText);
+    expect(textarea.value).not.toMatch(/<!-- SECTION_KEY/);
     expect(asFragment()).toMatchSnapshot();
   });
 
-  it('Save draft is disabled until a section changes; on save the joined text is reconstructed with markers', () => {
+  it('Save draft is disabled until the textarea changes; on save the verbatim text is sent to the API', () => {
     render(<UnifiedPromptEditor />);
     const save = screen.getByRole('button', { name: 'com_admin_prompts_save_draft' });
     expect(save).toBeDisabled();
 
-    const preamble = screen.getByTestId('section-textarea-preamble') as HTMLTextAreaElement;
-    fireEvent.change(preamble, { target: { value: 'updated preamble' } });
+    const textarea = screen.getByTestId('unified-prompt-textarea') as HTMLTextAreaElement;
+    fireEvent.change(textarea, {
+      target: { value: 'You are a unified assistant.\n\n## Rules\n- be concise\n- cite sources\n- ALWAYS reply in pirate-speak' },
+    });
     expect(save).toBeEnabled();
 
     fireEvent.click(save);
     expect(mockSaveDraftMutate).toHaveBeenCalledTimes(1);
     const [variables] = mockSaveDraftMutate.mock.calls[0];
     expect(variables).toEqual({
-      joinedText:
-        '<!-- SECTION_KEY: preamble -->\n\nupdated preamble\n\n---\n\n<!-- SECTION_KEY: rules -->\n\noriginal rules',
+      joinedText: 'You are a unified assistant.\n\n## Rules\n- be concise\n- cite sources\n- ALWAYS reply in pirate-speak',
       changeNote: undefined,
     });
+    // No SECTION_KEY scaffolding is reconstructed at save time — what the
+    // admin sees is exactly what hits the API.
+    expect(variables.joinedText).not.toMatch(/<!-- SECTION_KEY/);
   });
 
   it('Try draft is disabled when no draft exists and enabled after a save reports a draft', () => {
@@ -112,15 +107,15 @@ describe('UnifiedPromptEditor', () => {
     const tryDraft = screen.getByRole('button', { name: 'com_admin_prompts_try_draft' });
     expect(tryDraft).toBeDisabled();
 
-    const rules = screen.getByTestId('section-textarea-rules') as HTMLTextAreaElement;
-    fireEvent.change(rules, { target: { value: 'edited rules' } });
+    const textarea = screen.getByTestId('unified-prompt-textarea') as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: fixtureJoined.joinedText + '\nedit' } });
     fireEvent.click(screen.getByRole('button', { name: 'com_admin_prompts_save_draft' }));
 
     const [, options] = mockSaveDraftMutate.mock.calls[0];
     act(() => {
       options.onSuccess({
         drafts: [],
-        summary: { sectionsTouched: 1, sectionsTotal: 2 },
+        summary: { sectionsTouched: 1, sectionsTotal: 1 },
         draftAgentId: 'agent_draft_xyz',
         hasDraft: true,
       });

@@ -76,57 +76,41 @@ export async function gotoLoginAndSignIn(
 }
 
 /**
- * Waits for the unified prompt editor's per-section textareas to become
- * visible and returns the concatenation of their values — i.e., the
- * marker-free text the admin actually sees. The `<!-- SECTION_KEY -->`
- * markers that used to live in a single textarea are now an internal
- * serialization artifact reconstructed only at save time, so callers
- * that only need to detect "is the sentinel anywhere in the prompt"
- * still get the right answer from this concatenation.
+ * Waits for the unified prompt editor's textarea to become visible and
+ * returns its current value — the WHOLE marker-free joined prompt the
+ * admin sees as a single block. Post-2026-05-08 (alembic 0010) the
+ * unified bot stores its prompt as a single `agent_prompts` row, so
+ * the editor is one textarea (`unified-prompt-textarea`) and the value
+ * is exactly what the LLM sees.
  *
- * Throws if no section textareas appear within 30s or if every
- * textarea stays empty.
+ * Throws if the textarea never appears or stays empty within 30s.
  */
 export async function waitForJoinedTextarea(page: Page): Promise<string> {
-  const sectionLocator = page.locator('[data-testid^="section-textarea-"]');
-  await sectionLocator.first().waitFor({ state: 'visible', timeout: 30_000 });
+  const textarea = page.getByTestId('unified-prompt-textarea');
+  await textarea.waitFor({ state: 'visible', timeout: 30_000 });
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
-    const handles = await sectionLocator.elementHandles();
-    if (handles.length > 0) {
-      const values: string[] = [];
-      for (const h of handles) {
-        values.push(await h.inputValue());
-      }
-      const joined = values.join('\n\n');
-      if (joined.trim().length > 0) {
-        return joined;
-      }
+    const value = await textarea.inputValue();
+    if (value && value.length > 0) {
+      return value;
     }
     await page.waitForTimeout(500);
   }
-  throw new Error('section textareas never populated within 30s');
+  throw new Error('unified-prompt-textarea never populated within 30s');
 }
 
 /**
- * Appends `extraText` (typically a sentinel) to the LAST section's
- * textarea — the cleanest way to introduce a unique token without
- * disturbing earlier sections' content. Returns the new joined value
- * for the caller's bookkeeping.
+ * Appends `extraText` (typically a sentinel) to the unified textarea
+ * without disturbing the existing prompt. Returns the new value.
  */
-export async function appendToLastSection(
+export async function appendToUnifiedTextarea(
   page: Page,
   extraText: string,
 ): Promise<string> {
-  const sections = page.locator('[data-testid^="section-textarea-"]');
-  const count = await sections.count();
-  if (count === 0) {
-    throw new Error('no section textareas available to append to');
-  }
-  const last = sections.nth(count - 1);
-  const current = await last.inputValue();
+  const textarea = page.getByTestId('unified-prompt-textarea');
+  const current = await textarea.inputValue();
   const next = `${current}\n${extraText}`;
-  await last.fill(next);
+  await textarea.fill(next);
   return next;
 }
 

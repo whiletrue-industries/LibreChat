@@ -68,8 +68,11 @@ describe('runExport', () => {
     const { writer, writes, commits } = makeFakeWriter();
     const out = await runExport({ AgentPrompt, writer, now: new Date('2026-04-19') });
     expect(out.changed).toEqual(['unified']);
-    expect(writes.unified).toContain('<!-- SECTION_KEY: a -->');
-    expect(writes.unified).toContain('A');
+    // Post-2026-05-08 collapse: single-section bots export the body verbatim
+    // — no SECTION_KEY markers in the on-disk artifact (which is what the
+    // LLM also sees). Anything else would re-introduce marker pollution.
+    expect(writes.unified).toBe('A');
+    expect(writes.unified).not.toMatch(/SECTION_KEY/);
     expect(commits).toHaveLength(1);
     expect(commits[0].message).toBe('chore(prompt): nightly DB export 2026-04-19');
     expect(commits[0].changed).toEqual(['unified']);
@@ -89,7 +92,7 @@ describe('runExport', () => {
     const { writer, commits } = makeFakeWriter();
     await runExport({ AgentPrompt, writer });
     const reads: Record<string, string> = {
-      unified: '<!-- SECTION_KEY: a -->\nA',
+      unified: 'A',
     };
     writer.readFile = async (a) => reads[a];
     const out = await runExport({ AgentPrompt, writer });
