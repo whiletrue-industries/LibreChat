@@ -175,5 +175,41 @@ test.describe('UPE DoD — round trip', () => {
       canonicalAfter.text,
       `canonical post-publish answer must contain sentinel ${sentinel} (proves published prompt reached the LLM)`,
     ).toContain(sentinel);
+
+    // Step 6 — CLEANUP. The publish above shipped the sentinel-bearing
+    // prompt to ALL real users of the canonical agent. We must restore
+    // the pre-test prompt and publish it before the test exits. Without
+    // this, every reply real users receive after this test runs will
+    // include the sentinel until an admin manually republishes.
+    await page.goto(
+      `${ADMIN_PROMPTS_URL}/d/agent-prompts/${encodeURIComponent(ADMIN_PROMPTS_AGENT)}`,
+      { waitUntil: 'domcontentloaded' },
+    );
+    await waitForJoinedTextarea(page);
+    const cleanupTextarea = page.getByTestId('unified-prompt-textarea');
+    await cleanupTextarea.fill(original);
+    await page
+      .getByRole('button', { name: /Save draft|שמור טיוטה/i })
+      .click();
+    await expect(
+      page.getByRole('button', { name: /Try draft|נסה טיוטה/i }),
+      'Try draft must enable after cleanup save',
+    ).toBeEnabled({ timeout: 20_000 });
+    const cleanupNote = page
+      .locator('input[placeholder*="Change note" i], input[placeholder*="הערת"]')
+      .first();
+    await cleanupNote.fill(`UPE DoD cleanup — restoring pre-test prompt (sentinel was ${sentinel})`);
+    await page.getByRole('button', { name: /^Publish$|^פרסם$/i }).click();
+
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    const afterCleanup = await waitForJoinedTextarea(page);
+    expect(
+      afterCleanup,
+      'after cleanup publish + reload, the active joined text must equal the pre-test prompt',
+    ).toBe(original);
+    expect(
+      afterCleanup,
+      'cleanup publish must remove the sentinel from the active prompt',
+    ).not.toContain(sentinel);
   });
 });
