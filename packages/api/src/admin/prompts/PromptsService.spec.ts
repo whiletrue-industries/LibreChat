@@ -180,8 +180,10 @@ describe('PromptsService.publish + restore', () => {
     expect(rows[1].active).toBe(true);
     expect(rows[1].body).toBe('A2');
     expect(patchCalls).toHaveLength(1);
-    expect(patchCalls[0].instructions).toContain('<!-- SECTION_KEY: a -->');
-    expect(patchCalls[0].instructions).toContain('A2');
+    // Post-2026-05-08 collapse: a single section publishes its body verbatim
+    // — no SECTION_KEY scaffolding in the assistant's instructions field.
+    expect(patchCalls[0].instructions).toBe('A2');
+    expect(patchCalls[0].instructions).not.toMatch(/SECTION_KEY/);
   });
 
   it('rejects with ConcurrencyError when parentVersionId is stale', async () => {

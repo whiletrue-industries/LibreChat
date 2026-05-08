@@ -13,7 +13,7 @@ import {
   ADMIN_PROMPTS_TIMEOUT_MS,
   ADMIN_PROMPTS_URL,
   ADMIN_PROMPTS_USER,
-  appendToLastSection,
+  appendToUnifiedTextarea,
   gotoLoginAndSignIn,
   makeSentinel,
   waitForJoinedTextarea,
@@ -29,7 +29,7 @@ async function publishWithSentinel(
     { waitUntil: 'domcontentloaded' },
   );
   await waitForJoinedTextarea(page);
-  await appendToLastSection(page, sentinel);
+  await appendToUnifiedTextarea(page, sentinel);
 
   await page.getByRole('button', { name: /Save draft|שמור טיוטה/i }).click();
   await expect(
