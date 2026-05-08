@@ -19,6 +19,7 @@ import {
   ADMIN_PROMPTS_TIMEOUT_MS,
   ADMIN_PROMPTS_URL,
   ADMIN_PROMPTS_USER,
+  appendToLastSection,
   askChatQuestion,
   fetchDraftAgentId,
   gotoLoginAndSignIn,
@@ -43,12 +44,14 @@ test.describe('UPE DoD — round trip', () => {
     );
     const original = await waitForJoinedTextarea(page);
     expect(original.length).toBeGreaterThan(0);
-    expect(original).toContain('<!-- SECTION_KEY:');
+    // SECTION_KEY markers are internal-only; the per-section view must
+    // never expose them. This assertion is the regression guard for the
+    // 2026-05-08 marker-leakage fix — flip it from `not.toContain` back
+    // to `toContain` and the test fails immediately.
+    expect(original).not.toContain('<!-- SECTION_KEY:');
 
     const sentinel = makeSentinel('TEST_SENTINEL');
-    const editedText = `${original}\n${sentinel}`;
-    const textarea = page.getByTestId('unified-prompt-textarea');
-    await textarea.fill(editedText);
+    await appendToLastSection(page, sentinel);
 
     await page
       .getByRole('button', { name: /Save draft|שמור טיוטה/i })

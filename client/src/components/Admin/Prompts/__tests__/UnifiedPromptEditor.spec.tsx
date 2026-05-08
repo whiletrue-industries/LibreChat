@@ -75,29 +75,34 @@ describe('UnifiedPromptEditor', () => {
     window.open = originalOpen;
   });
 
-  it('renders the textarea pre-populated from the /joined fixture', () => {
+  it('renders one textarea per section, marker-free, pre-populated from /joined', () => {
     const { asFragment } = render(<UnifiedPromptEditor />);
-    const textarea = screen.getByTestId('unified-prompt-textarea') as HTMLTextAreaElement;
-    expect(textarea.value).toBe(fixtureJoined.joinedText);
+    const preamble = screen.getByTestId('section-textarea-preamble') as HTMLTextAreaElement;
+    const rules = screen.getByTestId('section-textarea-rules') as HTMLTextAreaElement;
+    expect(preamble.value).toBe('original preamble');
+    expect(rules.value).toBe('original rules');
+    // SECTION_KEY markers are an internal serialization artifact and must
+    // never bleed into the user-facing view.
+    expect(preamble.value).not.toMatch(/<!-- SECTION_KEY/);
+    expect(rules.value).not.toMatch(/<!-- SECTION_KEY/);
     expect(asFragment()).toMatchSnapshot();
   });
 
-  it('Save draft is disabled until the textarea changes, then calls the mutation', () => {
+  it('Save draft is disabled until a section changes; on save the joined text is reconstructed with markers', () => {
     render(<UnifiedPromptEditor />);
     const save = screen.getByRole('button', { name: 'com_admin_prompts_save_draft' });
     expect(save).toBeDisabled();
 
-    const textarea = screen.getByTestId('unified-prompt-textarea') as HTMLTextAreaElement;
-    fireEvent.change(textarea, {
-      target: { value: fixtureJoined.joinedText + '\nextra line\n' },
-    });
+    const preamble = screen.getByTestId('section-textarea-preamble') as HTMLTextAreaElement;
+    fireEvent.change(preamble, { target: { value: 'updated preamble' } });
     expect(save).toBeEnabled();
 
     fireEvent.click(save);
     expect(mockSaveDraftMutate).toHaveBeenCalledTimes(1);
     const [variables] = mockSaveDraftMutate.mock.calls[0];
     expect(variables).toEqual({
-      joinedText: fixtureJoined.joinedText + '\nextra line\n',
+      joinedText:
+        '<!-- SECTION_KEY: preamble -->\n\nupdated preamble\n\n---\n\n<!-- SECTION_KEY: rules -->\n\noriginal rules',
       changeNote: undefined,
     });
   });
@@ -107,10 +112,8 @@ describe('UnifiedPromptEditor', () => {
     const tryDraft = screen.getByRole('button', { name: 'com_admin_prompts_try_draft' });
     expect(tryDraft).toBeDisabled();
 
-    const textarea = screen.getByTestId('unified-prompt-textarea') as HTMLTextAreaElement;
-    fireEvent.change(textarea, {
-      target: { value: fixtureJoined.joinedText + '\nedit\n' },
-    });
+    const rules = screen.getByTestId('section-textarea-rules') as HTMLTextAreaElement;
+    fireEvent.change(rules, { target: { value: 'edited rules' } });
     fireEvent.click(screen.getByRole('button', { name: 'com_admin_prompts_save_draft' }));
 
     const [, options] = mockSaveDraftMutate.mock.calls[0];
