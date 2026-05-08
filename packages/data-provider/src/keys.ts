@@ -76,8 +76,6 @@ export enum QueryKeys {
   adminPromptVersionUsage = 'adminPromptVersionUsage',
   adminPromptsJoined = 'adminPromptsJoined',
   adminPromptsSnapshots = 'adminPromptsSnapshots',
-  adminPromptsTools = 'adminPromptsTools',
-  adminPromptsToolVersions = 'adminPromptsToolVersions',
   /* Admin Sources */
   adminSources = 'adminSources',
   adminSource = 'adminSource',
@@ -125,8 +123,4 @@ export enum MutationKeys {
   saveAdminPromptJoinedDraft = 'saveAdminPromptJoinedDraft',
   publishAdminPromptJoined = 'publishAdminPromptJoined',
   restoreAdminPromptSnapshot = 'restoreAdminPromptSnapshot',
-  saveAdminPromptToolDraft = 'saveAdminPromptToolDraft',
-  publishAdminPromptTool = 'publishAdminPromptTool',
-  restoreAdminPromptTool = 'restoreAdminPromptTool',
-  clearAdminPromptTool = 'clearAdminPromptTool',
 }

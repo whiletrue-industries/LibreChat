@@ -8,7 +8,6 @@ import {
 } from '~/data-provider/AdminPrompts/queries';
 import { useAuthContext, useLocalize } from '~/hooks';
 import SnapshotsSidebar from './SnapshotsSidebar';
-import ToolOverridesTable from './ToolOverridesTable';
 
 type LocalizeKey = Parameters<ReturnType<typeof useLocalize>>[0];
 const VALID: ReadonlyArray<'unified'> = ['unified'];
@@ -201,8 +200,6 @@ export default function UnifiedPromptEditor() {
 
         {snapshotsOpen && agent && <SnapshotsSidebar agentType={agent} />}
       </div>
-
-      <ToolOverridesTable agentType={agent} />
     </main>
   );
 }

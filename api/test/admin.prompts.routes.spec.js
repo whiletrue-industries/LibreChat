@@ -1,6 +1,6 @@
 /**
- * Route-level tests for the joined / snapshot / tool-override endpoints
- * added in UPE Task 6 (spec §5.2 LibreChat side).
+ * Route-level tests for the joined / snapshot endpoints added in UPE
+ * Task 6 (spec §5.2 LibreChat side).
  *
  * Strategy: a stub aurora module records the calls made by the controller
  * and returns canned pg-row-shaped objects, so the controller's mapping +
@@ -38,11 +38,6 @@ const mockAuroraStub = {
   listAllDrafts: jest.fn(),
   publishAllDrafts: jest.fn(),
   restoreSnapshotMinute: jest.fn(),
-  listToolOverrides: jest.fn(),
-  listToolOverrideVersions: jest.fn(),
-  saveToolOverrideDraft: jest.fn(),
-  publishToolOverride: jest.fn(),
-  restoreToolOverride: jest.fn(),
   getTestQuestions: jest.fn(),
   putTestQuestions: jest.fn(),
   getVersionUsage: jest.fn(),
@@ -51,12 +46,6 @@ const mockAuroraStub = {
 };
 
 jest.mock('~/server/services/AdminPrompts/aurora', () => mockAuroraStub);
-
-// Mock the canonical-tools fetcher so we don't hit BOTNIM_API_BASE.
-const mockFetchCanonicalTools = jest.fn();
-jest.mock('~/server/services/AdminPrompts/canonicalTools', () => ({
-  fetchCanonicalTools: (...args) => mockFetchCanonicalTools(...args),
-}));
 
 const { SystemRoles } = require('librechat-data-provider');
 const { Strategy: JwtStrategy, ExtractJwt } = require('passport-jwt');
@@ -446,169 +435,3 @@ describe('POST /api/admin/prompts/:agent/snapshots/:minute/restore', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-describe('GET /api/admin/prompts/:agent/tools', () => {
-  it('returns 403 for non-admin', async () => {
-    const res = await request(app)
-      .get('/api/admin/prompts/unified/tools')
-      .set('Authorization', `Bearer ${userToken}`);
-    expect(res.status).toBe(403);
-  });
-
-  it('returns tools merged from canonical + active overrides', async () => {
-    mockFetchCanonicalTools.mockResolvedValue({
-      search_unified__legal_text: 'default legal_text desc',
-      fetchWordDocument: 'default fetchWordDocument desc',
-    });
-    mockAuroraStub.listToolOverrides.mockResolvedValue([
-      {
-        toolName: 'search_unified__legal_text',
-        defaultDescription: 'default legal_text desc',
-        override: { id: 1, description: 'override A', publishedAt: new Date('2026-04-01') },
-      },
-      {
-        toolName: 'fetchWordDocument',
-        defaultDescription: 'default fetchWordDocument desc',
-        override: null,
-      },
-    ]);
-
-    const res = await request(app)
-      .get('/api/admin/prompts/unified/tools')
-      .set('Authorization', `Bearer ${adminToken}`);
-
-    expect(res.status).toBe(200);
-    expect(res.body.tools).toHaveLength(2);
-    expect(mockAuroraStub.listToolOverrides).toHaveBeenCalledWith(
-      'unified',
-      expect.objectContaining({ search_unified__legal_text: 'default legal_text desc' }),
-    );
-  });
-
-  it('falls back to empty canonical map when fetcher fails', async () => {
-    mockFetchCanonicalTools.mockRejectedValue(new Error('botnim_api unreachable'));
-    mockAuroraStub.listToolOverrides.mockResolvedValue([]);
-
-    const res = await request(app)
-      .get('/api/admin/prompts/unified/tools')
-      .set('Authorization', `Bearer ${adminToken}`);
-
-    expect(res.status).toBe(200);
-    expect(mockAuroraStub.listToolOverrides).toHaveBeenCalledWith('unified', {});
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-describe('tool-override CRUD routes', () => {
-  it('GET .../tools/:toolName/versions returns version history camelCased', async () => {
-    mockAuroraStub.listToolOverrideVersions.mockResolvedValue([
-      {
-        id: 7, agent_type: 'unified', tool_name: 'fetchWordDocument',
-        description: 'newer', active: true, is_draft: false,
-        parent_version_id: 6, change_note: null,
-        created_at: new Date('2026-04-01'), created_by: null,
-        published_at: new Date('2026-04-01'),
-      },
-    ]);
-
-    const res = await request(app)
-      .get('/api/admin/prompts/unified/tools/fetchWordDocument/versions')
-      .set('Authorization', `Bearer ${adminToken}`);
-
-    expect(res.status).toBe(200);
-    expect(res.body.versions[0]).toEqual(expect.objectContaining({
-      id: 7, toolName: 'fetchWordDocument', description: 'newer', active: true,
-    }));
-  });
-
-  it('POST .../tools/:toolName/draft returns 400 when description missing', async () => {
-    const res = await request(app)
-      .post('/api/admin/prompts/unified/tools/fetchWordDocument/draft')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ changeNote: 'x' });
-    expect(res.status).toBe(400);
-  });
-
-  it('POST .../tools/:toolName/draft returns 201 with the new draft', async () => {
-    mockAuroraStub.saveToolOverrideDraft.mockResolvedValue({
-      id: 8, agent_type: 'unified', tool_name: 'fetchWordDocument',
-      description: 'draft v1', active: false, is_draft: true,
-      parent_version_id: 7, change_note: 'note',
-      created_at: new Date('2026-04-02'), created_by: 'admin',
-      published_at: null,
-    });
-
-    const res = await request(app)
-      .post('/api/admin/prompts/unified/tools/fetchWordDocument/draft')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ description: 'draft v1', changeNote: 'note' });
-
-    expect(res.status).toBe(201);
-    expect(res.body.draft.toolName).toBe('fetchWordDocument');
-    expect(res.body.draft.isDraft).toBe(true);
-    expect(mockAuroraStub.saveToolOverrideDraft).toHaveBeenCalledWith(
-      expect.objectContaining({
-        agentType: 'unified', toolName: 'fetchWordDocument',
-        description: 'draft v1', changeNote: 'note',
-      }),
-    );
-  });
-
-  it('POST .../tools/:toolName/publish returns 400 without changeNote, 200 on success', async () => {
-    const noNote = await request(app)
-      .post('/api/admin/prompts/unified/tools/fetchWordDocument/publish')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ draftId: 8 });
-    expect(noNote.status).toBe(400);
-
-    mockAuroraStub.publishToolOverride.mockResolvedValue({
-      id: 8, agent_type: 'unified', tool_name: 'fetchWordDocument',
-      description: 'draft v1', active: true, is_draft: false,
-      parent_version_id: 7, change_note: null,
-      created_at: new Date(), created_by: null, published_at: new Date(),
-    });
-
-    const ok = await request(app)
-      .post('/api/admin/prompts/unified/tools/fetchWordDocument/publish')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ draftId: 8, parentVersionId: 7, changeNote: 'real change' });
-    expect(ok.status).toBe(200);
-    expect(ok.body.active.toolName).toBe('fetchWordDocument');
-    expect(ok.body.active.active).toBe(true);
-  });
-
-  it('POST .../tools/:toolName/publish returns 409 on stale parent', async () => {
-    mockAuroraStub.publishToolOverride.mockRejectedValue(
-      new Error('stale parent: parentVersionId is no longer the active row'),
-    );
-    const res = await request(app)
-      .post('/api/admin/prompts/unified/tools/fetchWordDocument/publish')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ draftId: 8, parentVersionId: 7, changeNote: 'real change' });
-    expect(res.status).toBe(409);
-  });
-
-  it('POST .../tools/:toolName/restore returns 200 on success', async () => {
-    mockAuroraStub.restoreToolOverride.mockResolvedValue({
-      id: 9, agent_type: 'unified', tool_name: 'fetchWordDocument',
-      description: 'restored', active: true, is_draft: false,
-      parent_version_id: 8, change_note: null,
-      created_at: new Date(), created_by: null, published_at: new Date(),
-    });
-    const res = await request(app)
-      .post('/api/admin/prompts/unified/tools/fetchWordDocument/restore')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ versionId: 7 });
-    expect(res.status).toBe(200);
-    expect(res.body.active.description).toBe('restored');
-  });
-
-  it('POST .../tools/:toolName/restore returns 404 when version not found', async () => {
-    mockAuroraStub.restoreToolOverride.mockRejectedValue(new Error('version not found: 99'));
-    const res = await request(app)
-      .post('/api/admin/prompts/unified/tools/fetchWordDocument/restore')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ versionId: 99 });
-    expect(res.status).toBe(404);
-  });
-});

@@ -1,9 +1,8 @@
 /**
- * UPE Task 7 — draft Agent mirror tests.
+ * Draft Agent mirror tests.
  *
  * Strategy: stub the aurora adapter so the tests don't need a Postgres
- * instance, and stub the canonical-tools fetcher so we don't reach for
- * BOTNIM_API_BASE. Mongo is real (mongodb-memory-server) so the upsert
+ * instance. Mongo is real (mongodb-memory-server) so the upsert
  * semantics + schema fields exercise the actual Agent model.
  */
 
@@ -29,26 +28,17 @@ jest.mock('~/server/services/prompts/agentPatcher', () => ({
 const mockAuroraStub = {
   listSections: jest.fn(),
   saveDraft: jest.fn(),
-  saveToolOverrideDraft: jest.fn(),
-  listToolOverrides: jest.fn(),
   listLatestDraftOrActiveSections: jest.fn(),
-  listLatestDraftOrActiveToolDescriptions: jest.fn(),
   getPool: jest.fn(),
   _resetPoolForTesting: jest.fn(),
 };
 
 jest.mock('~/server/services/AdminPrompts/aurora', () => mockAuroraStub);
 
-const mockFetchCanonicalTools = jest.fn();
-jest.mock('~/server/services/AdminPrompts/canonicalTools', () => ({
-  fetchCanonicalTools: (...args) => mockFetchCanonicalTools(...args),
-}));
-
 let app;
 let memServer;
 let adminToken;
 let Agent;
-let canonicalAgentDoc;
 
 const CANONICAL_NAME = 'Test Canonical Bot';
 const DRAFT_NAME = 'Test Canonical Bot — DRAFT';
@@ -107,7 +97,7 @@ afterAll(async () => {
 beforeEach(async () => {
   jest.clearAllMocks();
   await Agent.deleteMany({});
-  canonicalAgentDoc = await Agent.create({
+  await Agent.create({
     id: 'agent_canonical_test',
     name: CANONICAL_NAME,
     description: 'Canonical bot for tests',
@@ -141,7 +131,7 @@ function pgRow(overrides = {}) {
   };
 }
 
-describe('UPE Task 7 — ensureDraftAgent', () => {
+describe('ensureDraftAgent', () => {
   const draftAgent = require('~/server/services/AdminPrompts/draftAgent');
 
   it('canonicalAgentNameFor("unified") respects SEED_AGENT_NAME env', () => {
@@ -157,16 +147,13 @@ describe('UPE Task 7 — ensureDraftAgent', () => {
     const doc = await draftAgent.ensureDraftAgent({
       bot: 'unified',
       instructions: 'draft text v1',
-      tools: ['canonical_tool_a', 'canonical_tool_b'],
-      toolOverrides: { canonical_tool_a: 'overridden A' },
     });
     expect(doc).toMatchObject({
       name: DRAFT_NAME,
       instructions: 'draft text v1',
       provider: 'openAI',
       model: 'gpt-5.4-mini',
-      tools: ['canonical_tool_a', 'canonical_tool_b'],
-      tool_overrides: { canonical_tool_a: 'overridden A' },
+      tools: ['canonical_tool_a'],
       draft: true,
     });
     expect(doc.actions).toEqual(['act_1']);
@@ -177,39 +164,22 @@ describe('UPE Task 7 — ensureDraftAgent', () => {
   });
 
   it('upserts (single doc) on repeated calls — never spawns duplicates', async () => {
-    await draftAgent.ensureDraftAgent({
-      bot: 'unified',
-      instructions: 'v1',
-      tools: ['t1'],
-      toolOverrides: {},
-    });
-    await draftAgent.ensureDraftAgent({
-      bot: 'unified',
-      instructions: 'v2',
-      tools: ['t1', 't2'],
-      toolOverrides: { t2: 'desc2' },
-    });
+    await draftAgent.ensureDraftAgent({ bot: 'unified', instructions: 'v1' });
+    await draftAgent.ensureDraftAgent({ bot: 'unified', instructions: 'v2' });
     const drafts = await Agent.find({ name: DRAFT_NAME }).lean();
     expect(drafts).toHaveLength(1);
     expect(drafts[0].instructions).toBe('v2');
-    expect(drafts[0].tools).toEqual(['t1', 't2']);
-    expect(drafts[0].tool_overrides).toEqual({ t2: 'desc2' });
   });
 
   it('throws when the canonical agent is missing', async () => {
     await Agent.deleteMany({});
     await expect(
-      draftAgent.ensureDraftAgent({
-        bot: 'unified',
-        instructions: 'x',
-        tools: [],
-        toolOverrides: {},
-      }),
+      draftAgent.ensureDraftAgent({ bot: 'unified', instructions: 'x' }),
     ).rejects.toThrow(/canonical agent not found/);
   });
 });
 
-describe('UPE Task 7 — composeDraftPayload', () => {
+describe('composeDraftPayload', () => {
   const draftAgent = require('~/server/services/AdminPrompts/draftAgent');
 
   it('assembles instructions from listLatestDraftOrActiveSections', async () => {
@@ -217,38 +187,16 @@ describe('UPE Task 7 — composeDraftPayload', () => {
       pgRow({ section_key: 'intro', ordinal: 0, body: 'intro draft' }),
       pgRow({ section_key: 'rules', ordinal: 1, body: 'rules active', header_text: 'Rules' }),
     ]);
-    mockFetchCanonicalTools.mockResolvedValue({ canonical_tool_a: 'default A desc' });
-    mockAuroraStub.listLatestDraftOrActiveToolDescriptions.mockResolvedValue({
-      canonical_tool_a: 'default A desc',
-    });
 
     const payload = await draftAgent.composeDraftPayload('unified');
     expect(payload.instructions).toContain('<!-- SECTION_KEY: intro -->');
     expect(payload.instructions).toContain('intro draft');
     expect(payload.instructions).toContain('<!-- SECTION_KEY: rules -->');
     expect(payload.instructions).toContain('rules active');
-    expect(payload.tools).toEqual(['canonical_tool_a']);
-    expect(payload.toolOverrides).toEqual({ canonical_tool_a: 'default A desc' });
-  });
-
-  it('falls back to empty canonical when fetcher fails', async () => {
-    mockAuroraStub.listLatestDraftOrActiveSections.mockResolvedValue([
-      pgRow({ section_key: 'intro', ordinal: 0, body: 'b' }),
-    ]);
-    mockFetchCanonicalTools.mockRejectedValue(new Error('botnim_api unreachable'));
-    mockAuroraStub.listLatestDraftOrActiveToolDescriptions.mockResolvedValue({});
-
-    const payload = await draftAgent.composeDraftPayload('unified');
-    expect(payload.tools).toEqual([]);
-    expect(payload.toolOverrides).toEqual({});
-    expect(mockAuroraStub.listLatestDraftOrActiveToolDescriptions).toHaveBeenCalledWith(
-      'unified',
-      {},
-    );
   });
 });
 
-describe('UPE Task 7 — controller hooks', () => {
+describe('controller hooks', () => {
   function setupAuroraSaveDraftToReturnRow() {
     mockAuroraStub.saveDraft.mockResolvedValue(
       pgRow({ id: 'draft-1', section_key: 'intro', body: 'new body', is_draft: true, active: false }),
@@ -256,10 +204,6 @@ describe('UPE Task 7 — controller hooks', () => {
     mockAuroraStub.listLatestDraftOrActiveSections.mockResolvedValue([
       pgRow({ section_key: 'intro', ordinal: 0, body: 'new body' }),
     ]);
-    mockFetchCanonicalTools.mockResolvedValue({ canonical_tool_a: 'default A desc' });
-    mockAuroraStub.listLatestDraftOrActiveToolDescriptions.mockResolvedValue({
-      canonical_tool_a: 'default A desc',
-    });
   }
 
   it('POST /:agent/sections/:key/drafts triggers a draft-Agent upsert', async () => {
@@ -309,8 +253,6 @@ describe('UPE Task 7 — controller hooks', () => {
     mockAuroraStub.listLatestDraftOrActiveSections.mockResolvedValue([
       pgRow({ section_key: 'intro', ordinal: 0, body: 'new intro' }),
     ]);
-    mockFetchCanonicalTools.mockResolvedValue({});
-    mockAuroraStub.listLatestDraftOrActiveToolDescriptions.mockResolvedValue({});
 
     const joined = '<!-- SECTION_KEY: intro -->\nnew intro';
     const res = await request(app)
@@ -322,60 +264,5 @@ describe('UPE Task 7 — controller hooks', () => {
     const drafts = await Agent.find({ draft: true }).lean();
     expect(drafts).toHaveLength(1);
     expect(drafts[0].instructions).toContain('new intro');
-  });
-
-  it('POST /:agent/tools/:toolName/draft triggers a draft-Agent upsert with override applied', async () => {
-    mockAuroraStub.saveToolOverrideDraft.mockResolvedValue({
-      id: 8,
-      agent_type: 'unified',
-      tool_name: 'canonical_tool_a',
-      description: 'override v1',
-      active: false,
-      is_draft: true,
-      parent_version_id: null,
-      change_note: 'note',
-      created_at: new Date(),
-      created_by: null,
-      published_at: null,
-    });
-    mockAuroraStub.listLatestDraftOrActiveSections.mockResolvedValue([
-      pgRow({ section_key: 'intro', ordinal: 0, body: 'intro body' }),
-    ]);
-    mockFetchCanonicalTools.mockResolvedValue({ canonical_tool_a: 'default A desc' });
-    mockAuroraStub.listLatestDraftOrActiveToolDescriptions.mockResolvedValue({
-      canonical_tool_a: 'override v1',
-    });
-
-    const res = await request(app)
-      .post('/api/admin/prompts/unified/tools/canonical_tool_a/draft')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ description: 'override v1', changeNote: 'note' });
-
-    expect(res.status).toBe(201);
-    const drafts = await Agent.find({ draft: true }).lean();
-    expect(drafts).toHaveLength(1);
-    expect(drafts[0].tools).toEqual(['canonical_tool_a']);
-    expect(drafts[0].tool_overrides).toEqual({ canonical_tool_a: 'override v1' });
-  });
-
-  it('repeated drafts update the SAME draft Agent doc (no duplicates)', async () => {
-    setupAuroraSaveDraftToReturnRow();
-
-    await request(app)
-      .post('/api/admin/prompts/unified/sections/intro/drafts')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ body: 'first', changeNote: 'a' });
-
-    mockAuroraStub.listLatestDraftOrActiveSections.mockResolvedValue([
-      pgRow({ section_key: 'intro', ordinal: 0, body: 'second' }),
-    ]);
-    await request(app)
-      .post('/api/admin/prompts/unified/sections/intro/drafts')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ body: 'second', changeNote: 'b' });
-
-    const drafts = await Agent.find({ draft: true }).lean();
-    expect(drafts).toHaveLength(1);
-    expect(drafts[0].instructions).toContain('second');
   });
 });

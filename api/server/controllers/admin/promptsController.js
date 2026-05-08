@@ -1,7 +1,6 @@
 'use strict';
 
 const aurora = require('~/server/services/AdminPrompts/aurora');
-const { fetchCanonicalTools } = require('~/server/services/AdminPrompts/canonicalTools');
 const draftAgentService = require('~/server/services/AdminPrompts/draftAgent');
 const { AdminPrompts } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
@@ -612,147 +611,6 @@ async function restoreSnapshot(req, res) {
   }
 }
 
-// ── tool override handlers ────────────────────────────────────────────────────
-
-function toolOverrideRowToCamel(row) {
-  if (!row) return row;
-  return {
-    id: row.id,
-    agentType: row.agent_type,
-    toolName: row.tool_name,
-    description: row.description,
-    active: row.active,
-    isDraft: row.is_draft,
-    parentVersionId: row.parent_version_id,
-    changeNote: row.change_note,
-    createdAt: row.created_at,
-    createdBy: row.created_by,
-    publishedAt: row.published_at,
-  };
-}
-
-async function fetchCanonicalToolsSafe(agentType, log) {
-  try {
-    return await fetchCanonicalTools(agentType);
-  } catch (err) {
-    log?.warn?.({ err }, 'fetchCanonicalTools failed; falling back to empty map');
-    logger.warn('[admin/prompts] fetchCanonicalTools failed; falling back to empty map', err);
-    return {};
-  }
-}
-
-async function listToolOverridesHandler(req, res) {
-  const agentType = req.params.agent;
-  try {
-    const canonical = await fetchCanonicalToolsSafe(agentType, req.log);
-    const tools = await aurora.listToolOverrides(agentType, canonical);
-    return res.status(200).json({ tools });
-  } catch (err) {
-    req.log?.error({ err }, 'listToolOverrides failed');
-    logger.error('[admin/prompts] listToolOverrides failed', err);
-    return res.status(503).json({ error: 'prompts service unavailable; try again' });
-  }
-}
-
-async function listToolOverrideVersionsHandler(req, res) {
-  const agentType = req.params.agent;
-  const toolName = req.params.toolName;
-  try {
-    const rows = await aurora.listToolOverrideVersions({ agentType, toolName });
-    return res.status(200).json({ versions: rows.map(toolOverrideRowToCamel) });
-  } catch (err) {
-    req.log?.error({ err }, 'listToolOverrideVersions failed');
-    logger.error('[admin/prompts] listToolOverrideVersions failed', err);
-    return res.status(503).json({ error: 'prompts service unavailable; try again' });
-  }
-}
-
-async function saveToolOverrideDraftHandler(req, res) {
-  const agentType = req.params.agent;
-  const toolName = req.params.toolName;
-  const { description, changeNote } = req.body;
-  if (typeof description !== 'string' || description.length === 0) {
-    return res.status(400).json({ error: 'description (non-empty string) required' });
-  }
-  try {
-    const row = await aurora.saveToolOverrideDraft({
-      agentType,
-      toolName,
-      description,
-      changeNote: changeNote || null,
-      createdBy: req.user?.id || req.user?._id?.toString() || null,
-    });
-    await draftAgentService.refreshDraftAgentForBot(agentType);
-    return res.status(201).json({ draft: toolOverrideRowToCamel(row) });
-  } catch (err) {
-    req.log?.error({ err }, 'saveToolOverrideDraft failed');
-    logger.error('[admin/prompts] saveToolOverrideDraft failed', err);
-    return res.status(503).json({ error: 'prompts service unavailable; try again' });
-  }
-}
-
-async function publishToolOverrideHandler(req, res) {
-  const agentType = req.params.agent;
-  const toolName = req.params.toolName;
-  const { draftId, parentVersionId, changeNote } = req.body;
-  if (!changeNote) {
-    return res.status(400).json({ error: 'changeNote required on publish' });
-  }
-  if (draftId === undefined || draftId === null) {
-    return res.status(400).json({ error: 'draftId required' });
-  }
-  try {
-    const row = await aurora.publishToolOverride({
-      agentType,
-      toolName,
-      draftId,
-      parentVersionId: parentVersionId === undefined ? null : parentVersionId,
-    });
-    return res.status(200).json({ active: toolOverrideRowToCamel(row) });
-  } catch (err) {
-    if (/stale parent/i.test(err.message)) {
-      return res.status(409).json({ error: 'stale parent', message: err.message });
-    }
-    req.log?.error({ err }, 'publishToolOverride failed');
-    logger.error('[admin/prompts] publishToolOverride failed', err);
-    return res.status(503).json({ error: 'prompts service unavailable; try again' });
-  }
-}
-
-async function restoreToolOverrideHandler(req, res) {
-  const agentType = req.params.agent;
-  const toolName = req.params.toolName;
-  const { versionId } = req.body;
-  if (versionId === undefined || versionId === null) {
-    return res.status(400).json({ error: 'versionId required' });
-  }
-  try {
-    const row = await aurora.restoreToolOverride({ agentType, toolName, versionId });
-    return res.status(200).json({ active: toolOverrideRowToCamel(row) });
-  } catch (err) {
-    if (/version .*not found|does not match/i.test(err.message)) {
-      return res.status(404).json({ error: err.message });
-    }
-    req.log?.error({ err }, 'restoreToolOverride failed');
-    logger.error('[admin/prompts] restoreToolOverride failed', err);
-    return res.status(503).json({ error: 'prompts service unavailable; try again' });
-  }
-}
-
-async function clearToolOverrideHandler(req, res) {
-  const agentType = req.params.agent;
-  const toolName = req.params.toolName;
-  try {
-    const row = await aurora.clearToolOverride({ agentType, toolName });
-    await draftAgentService.refreshDraftAgentForBot(agentType);
-    return res.status(200).json({ cleared: toolOverrideRowToCamel(row) });
-  } catch (err) {
-    req.log?.error({ err }, 'clearToolOverride failed');
-    logger.error('[admin/prompts] clearToolOverride failed', err);
-    return res.status(503).json({ error: 'prompts service unavailable; try again' });
-  }
-}
-
 module.exports = {
   listAgents,
   listSections,
@@ -769,10 +627,4 @@ module.exports = {
   publishJoinedAll,
   listSnapshots,
   restoreSnapshot,
-  listToolOverrides: listToolOverridesHandler,
-  listToolOverrideVersions: listToolOverrideVersionsHandler,
-  saveToolOverrideDraft: saveToolOverrideDraftHandler,
-  publishToolOverride: publishToolOverrideHandler,
-  restoreToolOverride: restoreToolOverrideHandler,
-  clearToolOverride: clearToolOverrideHandler,
 };

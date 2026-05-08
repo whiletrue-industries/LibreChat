@@ -28,10 +28,6 @@
  *   SEED_SPECS_DIR      (default /srv/specs)
  *   MONGO_URI           — required for the global-share + draft-mirror steps;
  *                        if unset both are skipped with a warning
- *   BOTNIM_API_BASE     — optional; canonical tool descriptions are fetched
- *                        from `${BOTNIM_API_BASE}/botnim/config/<bot>` to
- *                        seed the draft mirror's tool_overrides map. Falls
- *                        back to an empty map when unset.
  *   DATABASE_URL        — Aurora connection (required unless DB_HOST/etc are set)
  *   DB_HOST             — Aurora host (use with DB_USER, DB_PASSWORD, DB_PORT, DB_NAME)
  */
@@ -181,7 +177,7 @@ function loadOpenApiSpecs() {
   // OpenAPI specs whose `servers[0].url` points at the botnim-api
   // backend and must be rewritten per env. budgetkey + takanon point
   // at external services and are intentionally NOT in this list.
-  const BOTNIM_OWNED_SPECS = new Set(['botnim', 'generate_word_doc']);
+  const BOTNIM_OWNED_SPECS = new Set(['botnim', 'generate_word_doc', 'knesset_sessions_live']);
   const raw = files.map((f) => {
     let body = fs.readFileSync(path.join(dir, f), 'utf8');
     const name = path.basename(f, path.extname(f));
@@ -201,12 +197,12 @@ function loadOpenApiSpecs() {
 // LibreChat's `POST /api/agents/actions/:agent_id` removes ALL existing
 // agent.tools whose name contains the action's encodedDomain BEFORE
 // concatenating the new functions (api/server/routes/agents/actions.js
-// lines ~173-184). Two of our specs (`botnim` and `generate_word_doc`)
-// both target the SEED_BOTNIM_API_BASE host, so registering them as
-// separate actions makes the second wipe out the first's 18 retrieval
-// functions. The fix is to merge same-server-url specs into a single
-// OpenAPI document before registering, so they go up as ONE action with
-// the union of their paths.
+// lines ~173-184). Several of our specs (`botnim`, `generate_word_doc`,
+// `knesset_sessions_live`) all target the SEED_BOTNIM_API_BASE host, so
+// registering them as separate actions makes each one wipe out the
+// previous's retrieval functions. The fix is to merge same-server-url
+// specs into a single OpenAPI document before registering, so they go
+// up as ONE action with the union of their paths.
 function mergeSameDomainSpecs(specs) {
   const byServerUrl = new Map();
   const ordered = [];
@@ -347,29 +343,25 @@ async function shareAgentWithGlobalProject(agentId) {
   );
 }
 
-// Upsert the "<canonical name> — DRAFT" mirror Agent doc (UPE Task 8,
-// spec §5.4). The mirror shares provider/model/model_parameters/actions
-// with the canonical agent; its `instructions` reflect the latest
-// draft-or-active joined prompt and its `tool_overrides` map carries
-// draft-or-active per-tool description overrides keyed by tool name.
+// Upsert the "<canonical name> — DRAFT" mirror Agent doc. The mirror
+// shares provider/model/model_parameters/actions/tools with the canonical
+// agent; its `instructions` reflect the latest draft-or-active joined
+// prompt.
 //
 // On a fresh stack with no in-flight drafts the mirror's instructions
 // equal the canonical's instructions. The doc is upserted by name so
 // re-running the seed never produces duplicates.
 async function ensureDraftAgentMirror() {
   const { Agent } = require('~/db/models');
-  const { instructions, tools, toolOverrides } =
-    await draftAgentService.composeDraftPayload(AGENT_BOT);
+  const { instructions } = await draftAgentService.composeDraftPayload(AGENT_BOT);
   const draft = await draftAgentService.ensureDraftAgent({
     bot: AGENT_BOT,
     instructions,
-    tools,
-    toolOverrides,
     Agent,
   });
   console.log(
     `[seed] draft mirror: id=${draft.id} name="${draft.name}" ` +
-      `tools=${(draft.tools || []).length} overrides=${Object.keys(draft.tool_overrides || {}).length}`,
+      `tools=${(draft.tools || []).length}`,
   );
 }
 

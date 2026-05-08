@@ -1,13 +1,12 @@
 'use strict';
 
-// Draft-Agent mirror service (UPE Task 7, spec §5.4).
+// Draft-Agent mirror service.
 //
 // Maintains a single "<canonical name> — DRAFT" Mongo Agent doc per bot
 // that admins can chat with via /c/new?agent_id=<draftId>. The draft mirror
-// inherits provider/model/model_parameters/actions from the canonical agent,
-// but its `instructions` reflect the in-flight joined-draft text and its
-// `tool_overrides` map carries draft-or-active description overrides keyed by
-// tool name.
+// inherits provider/model/model_parameters/actions/tools verbatim from the
+// canonical agent; only its `instructions` differ — they reflect the
+// in-flight joined-draft text.
 //
 // Idempotent: ensureDraftAgent is an upsert. Re-saving any draft section just
 // updates the same draft Agent doc; no new Agent records are ever spawned.
@@ -15,7 +14,6 @@
 const crypto = require('node:crypto');
 
 const aurora = require('~/server/services/AdminPrompts/aurora');
-const { fetchCanonicalTools } = require('~/server/services/AdminPrompts/canonicalTools');
 const { AdminPrompts } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 
@@ -48,21 +46,13 @@ function rowToAssembleSection(row) {
   };
 }
 
-// Build the would-be-joined draft instructions + tool override map by reading
-// the latest draft-or-active state for the bot. Used by ensureDraftAgent and
-// exported separately for tests / future hooks that want the payload alone.
+// Build the would-be-joined draft instructions by reading the latest
+// draft-or-active state for the bot. Used by ensureDraftAgent and exported
+// separately for tests / future hooks that want the payload alone.
 async function composeDraftPayload(bot) {
   const sections = await aurora.listLatestDraftOrActiveSections(bot);
   const instructions = AdminPrompts.assemble(sections.map(rowToAssembleSection));
-
-  let canonicalTools = {};
-  try {
-    canonicalTools = await fetchCanonicalTools(bot);
-  } catch (err) {
-    logger.warn('[draftAgent] fetchCanonicalTools failed; using empty canonical map', err);
-  }
-  const toolOverrides = await aurora.listLatestDraftOrActiveToolDescriptions(bot, canonicalTools);
-  return { instructions, toolOverrides };
+  return { instructions };
 }
 
 // Upsert the draft Agent doc for `bot`. Returns the updated/created doc.
@@ -71,10 +61,9 @@ async function composeDraftPayload(bot) {
 //   1. Mongo Agent.findOne({ name: canonicalAgentNameFor(bot) })
 //   2. None → throw (caller has no canonical to mirror; deploy must seed first)
 //
-// Side-effect free if `instructions` and `tools`/`toolOverrides` match what is
-// already on the doc — Mongo upsert is a write either way, but the data is
-// equivalent.
-async function ensureDraftAgent({ bot, instructions, toolOverrides, Agent }) {
+// Side-effect free if `instructions` matches what is already on the doc —
+// Mongo upsert is a write either way, but the data is equivalent.
+async function ensureDraftAgent({ bot, instructions, Agent }) {
   if (!Agent) {
     Agent = require('~/db/models').Agent;
   }
@@ -89,13 +78,9 @@ async function ensureDraftAgent({ bot, instructions, toolOverrides, Agent }) {
     );
   }
 
-  // The DRAFT agent must mirror canonical's actual `tools[]` (the
-  // namespaced tool names like `search_unified__legal_text_action_<...>`)
-  // — those are the only thing LibreChat resolves at chat time when the
-  // LLM picks a tool. The `tools` argument from composeDraftPayload is
-  // the list of OVERRIDE keys (descriptions only), which is a subset
-  // shaped completely differently. Take canonical.tools verbatim; rely
-  // on `tool_overrides` to convey description differences.
+  // The DRAFT mirrors canonical verbatim except for `instructions` (in-flight
+  // joined draft text). Tools/actions are taken straight from canonical so the
+  // LLM sees exactly the same tool surface during draft chat.
   const update = {
     name: draftName,
     description: canonical.description,
@@ -104,7 +89,6 @@ async function ensureDraftAgent({ bot, instructions, toolOverrides, Agent }) {
     model: canonical.model,
     model_parameters: canonical.model_parameters,
     tools: canonical.tools || [],
-    tool_overrides: toolOverrides || {},
     actions: canonical.actions,
     author: canonical.author,
     authorName: canonical.authorName,
@@ -116,7 +100,6 @@ async function ensureDraftAgent({ bot, instructions, toolOverrides, Agent }) {
   const existing = await Agent.findOne({ name: draftName });
   if (existing) {
     Object.assign(existing, update);
-    existing.markModified('tool_overrides');
     existing.markModified('model_parameters');
     await existing.save();
     return existing.toObject();
@@ -138,7 +121,6 @@ async function refreshDraftAgentForBot(bot) {
     return await ensureDraftAgent({
       bot,
       instructions: payload.instructions,
-      toolOverrides: payload.toolOverrides,
     });
   } catch (err) {
     logger.warn('[draftAgent] refreshDraftAgentForBot failed', err);

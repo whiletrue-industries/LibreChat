@@ -1,11 +1,11 @@
 /**
- * UPE Task 8 — seed-botnim-agent.js draft-mirror integration.
+ * seed-botnim-agent.js draft-mirror integration.
  *
  * The seed script (LibreChat/scripts/seed-botnim-agent.js) loads
  * api/server/services/AdminPrompts/draftAgent.js and calls
  * composeDraftPayload + ensureDraftAgent under the same Mongo connection
  * as the global-share step. This test mirrors that flow:
- *   1. Stub aurora + canonicalTools (same shape the seed actually exposes).
+ *   1. Stub aurora (same shape the seed actually exposes).
  *   2. Pre-create a canonical Mongo Agent doc the way HTTP POST /api/agents
  *      would (the seed does that step over HTTP, which we cannot exercise
  *      from a unit test, but the resulting Mongo doc is what matters).
@@ -23,14 +23,8 @@ process.env.SEED_AGENT_NAME = 'Test Canonical Bot — Seed';
 
 const mockAuroraStub = {
   listLatestDraftOrActiveSections: jest.fn(),
-  listLatestDraftOrActiveToolDescriptions: jest.fn(),
 };
 jest.mock('~/server/services/AdminPrompts/aurora', () => mockAuroraStub);
-
-const mockFetchCanonicalTools = jest.fn();
-jest.mock('~/server/services/AdminPrompts/canonicalTools', () => ({
-  fetchCanonicalTools: (...args) => mockFetchCanonicalTools(...args),
-}));
 
 let memServer;
 let Agent;
@@ -85,24 +79,18 @@ function pgRow(overrides = {}) {
   };
 }
 
-describe('UPE Task 8 — seed flow draft mirror', () => {
+describe('seed flow draft mirror', () => {
   const draftAgent = require('~/server/services/AdminPrompts/draftAgent');
 
-  it('first seed call creates a draft mirror sharing canonical actions and draft=true', async () => {
+  it('first seed call creates a draft mirror sharing canonical actions/tools and draft=true', async () => {
     mockAuroraStub.listLatestDraftOrActiveSections.mockResolvedValue([
       pgRow({ section_key: 'intro', ordinal: 0, body: 'published joined prompt v1' }),
     ]);
-    mockFetchCanonicalTools.mockResolvedValue({ canonical_tool_a: 'desc-a' });
-    mockAuroraStub.listLatestDraftOrActiveToolDescriptions.mockResolvedValue({
-      canonical_tool_a: 'desc-a',
-    });
 
     const payload = await draftAgent.composeDraftPayload('unified');
     const draft = await draftAgent.ensureDraftAgent({
       bot: 'unified',
       instructions: payload.instructions,
-      tools: payload.tools,
-      toolOverrides: payload.toolOverrides,
       Agent,
     });
 
@@ -110,7 +98,6 @@ describe('UPE Task 8 — seed flow draft mirror', () => {
     expect(draft.draft).toBe(true);
     expect(draft.actions).toEqual(['act_seed_1']);
     expect(draft.tools).toEqual(['canonical_tool_a']);
-    expect(draft.tool_overrides).toEqual({ canonical_tool_a: 'desc-a' });
     expect(draft.instructions).toContain('published joined prompt v1');
 
     const allDrafts = await Agent.find({ draft: true }).lean();
@@ -126,14 +113,10 @@ describe('UPE Task 8 — seed flow draft mirror', () => {
     mockAuroraStub.listLatestDraftOrActiveSections.mockResolvedValue([
       pgRow({ section_key: 'intro', ordinal: 0, body: 'first' }),
     ]);
-    mockFetchCanonicalTools.mockResolvedValue({});
-    mockAuroraStub.listLatestDraftOrActiveToolDescriptions.mockResolvedValue({});
     let payload = await draftAgent.composeDraftPayload('unified');
     const first = await draftAgent.ensureDraftAgent({
       bot: 'unified',
       instructions: payload.instructions,
-      tools: payload.tools,
-      toolOverrides: payload.toolOverrides,
       Agent,
     });
 
@@ -144,8 +127,6 @@ describe('UPE Task 8 — seed flow draft mirror', () => {
     const second = await draftAgent.ensureDraftAgent({
       bot: 'unified',
       instructions: payload.instructions,
-      tools: payload.tools,
-      toolOverrides: payload.toolOverrides,
       Agent,
     });
 
