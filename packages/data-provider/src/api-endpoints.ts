@@ -511,3 +511,7 @@ export const adminSources = (): string => `${BASE_URL}/api/admin/sources`;
 
 export const adminSource = (context: string): string =>
   `${BASE_URL}/api/admin/sources/${encodeURIComponent(context)}`;
+
+/* --- Admin Sanity --- */
+export const adminSanity = (limit?: number): string =>
+  `${BASE_URL}/api/admin/sanity${limit ? `?limit=${limit}` : ''}`;

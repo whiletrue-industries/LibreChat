@@ -1229,3 +1229,8 @@ export function getAdminSources(): Promise<q.AdminSourcesResponse> {
 export function getAdminSource(context: string): Promise<q.AdminSourceResponse> {
   return request.get(endpoints.adminSource(context));
 }
+
+/* --- Admin Sanity --- */
+export function getAdminSanity(limit?: number): Promise<q.AdminSanityRunsResponse> {
+  return request.get(endpoints.adminSanity(limit));
+}

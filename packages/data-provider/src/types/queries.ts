@@ -524,3 +524,34 @@ export interface AdminSourceResponse {
   context_summary: AdminSourceContextSummary | null;
   sources: AdminSourceItem[];
 }
+
+/* --- Admin Sanity --- */
+export type AdminSanityAlertSeverity = null | 'orange' | 'red';
+
+export interface AdminSanityAlertReason {
+  rule: string;
+  detail: string;
+}
+
+export interface AdminSanityRunSummary {
+  id: string;
+  env: string;
+  started_at: string;
+  finished_at: string | null;
+  status: 'running' | 'succeeded' | 'failed';
+  total_rows: number | null;
+  ab_new_wins: number | null;
+  ab_old_wins: number | null;
+  ab_ties: number | null;
+  rubric_pass: number | null;
+  rubric_fail: number | null;
+  rubric_xfail: number | null;
+  rubric_infra: number | null;
+  pass_rate: number | null;
+  alert_severity: AdminSanityAlertSeverity;
+  alert_reasons: AdminSanityAlertReason[];
+}
+
+export interface AdminSanityRunsResponse {
+  runs: AdminSanityRunSummary[];
+}
