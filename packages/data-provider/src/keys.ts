@@ -79,6 +79,8 @@ export enum QueryKeys {
   /* Admin Sources */
   adminSources = 'adminSources',
   adminSource = 'adminSource',
+  /* Admin Sanity */
+  adminSanity = 'adminSanity',
 }
 
 // Dynamic query keys that require parameters
