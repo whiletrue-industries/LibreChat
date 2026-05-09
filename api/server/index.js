@@ -144,6 +144,7 @@ const startServer = async () => {
   app.use('/api/admin/feedback', require('./routes/admin/feedback'));
   app.use('/api/admin/prompts', require('./routes/admin/prompts'));
   app.use('/api/admin/sources', require('./routes/admin/sources'));
+  app.use('/api/admin/sanity', require('./routes/admin/sanity'));
   app.use('/api/actions', routes.actions);
   app.use('/api/keys', routes.keys);
   app.use('/api/api-keys', routes.apiKeys);
