@@ -13,6 +13,7 @@ import {
   UnifiedPromptEditor,
 } from '~/components/Admin/Prompts';
 import { SourcesDashboard } from '~/components/Admin/Sources';
+import { SanityDashboard } from '~/components/Admin/Sanity';
 import DashboardRoute from './Layouts/Dashboard';
 
 const dashboardRoutes = {
@@ -103,6 +104,10 @@ const dashboardRoutes = {
     {
       path: 'sources',
       element: <SourcesDashboard />,
+    },
+    {
+      path: 'sanity',
+      element: <SanityDashboard />,
     },
     {
       path: '*',

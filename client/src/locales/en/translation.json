@@ -89,6 +89,7 @@
   "com_admin_sources_last_sync": "Last sync",
   "com_admin_sources_no_history": "Awaiting first snapshot",
   "com_admin_sources_stalest": "Stalest context",
+  "com_admin_sanity_title": "Sanity DoD",
   "com_admin_sources_title": "Data sources",
   "com_admin_sources_total_docs": "Total documents",
   "com_agents_agent_card_label": "{{name}} agent. {{description}}",

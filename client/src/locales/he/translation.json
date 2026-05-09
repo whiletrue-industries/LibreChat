@@ -89,6 +89,7 @@
   "com_admin_sources_last_sync": "סנכרון אחרון",
   "com_admin_sources_no_history": "ממתין לצילום ראשון",
   "com_admin_sources_stalest": "ההקשר הישן ביותר",
+  "com_admin_sanity_title": "בדיקת תקינות",
   "com_admin_sources_title": "מקורות נתונים",
   "com_admin_sources_total_docs": "סך המסמכים",
   "com_agents_agent_card_label": "{{name}} סוכן. {{description}}",

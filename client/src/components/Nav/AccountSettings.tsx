@@ -1,7 +1,7 @@
 import { memo, useRef } from 'react';
 import * as Menu from '@ariakit/react/menu';
 import { useNavigate } from 'react-router-dom';
-import { BarChart3, Database, FileText, LogOut } from 'lucide-react';
+import { Activity, BarChart3, Database, FileText, LogOut } from 'lucide-react';
 import { SystemRoles } from 'librechat-data-provider';
 import { LinkIcon, DropdownMenuSeparator, Avatar } from '@librechat/client';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
@@ -93,6 +93,15 @@ function AccountSettings() {
           >
             <Database className="icon-md" aria-hidden="true" />
             {localize('com_admin_sources_title')}
+          </Menu.MenuItem>
+        )}
+        {isAdmin && (
+          <Menu.MenuItem
+            onClick={() => navigate('/d/sanity')}
+            className="select-item text-sm"
+          >
+            <Activity className="icon-md" aria-hidden="true" />
+            {localize('com_admin_sanity_title')}
           </Menu.MenuItem>
         )}
         <DropdownMenuSeparator />
