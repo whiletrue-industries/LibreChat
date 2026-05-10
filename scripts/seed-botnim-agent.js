@@ -445,8 +445,20 @@ async function main() {
   console.log(`[seed] done.`);
 }
 
-main().catch((err) => {
-  console.error(`[seed] FATAL: ${err.message}`);
-  if (err.body) console.error(JSON.stringify(err.body, null, 2));
-  process.exit(1);
-});
+main()
+  .then(() => {
+    // Explicit exit so the process doesn't hang on open Mongoose / fetch
+    // keep-alive sockets after `[seed] done.`. Without this, ECS waits
+    // the full 10-min stop budget on a successful seed, blocking
+    // deploy.sh phase 9 (manifested 2026-05-10 as
+    // "Waiter TasksStopped failed: Max attempts exceeded" even though
+    // `[seed] done.` had been logged).
+    // Exit code respects any process.exitCode set by partial failures
+    // inside main() (e.g., draft mirror failure).
+    process.exit(process.exitCode ?? 0);
+  })
+  .catch((err) => {
+    console.error(`[seed] FATAL: ${err.message}`);
+    if (err.body) console.error(JSON.stringify(err.body, null, 2));
+    process.exit(1);
+  });
