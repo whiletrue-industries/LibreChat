@@ -26,7 +26,13 @@ const SPARKLINE_WINDOW = 30;  // last N snapshots per spec Q5=a
 async function getContextStats(bot, { pool = defaultPool() } = {}) {
   // Single round trip via two CTEs:
   //   recent: last SPARKLINE_WINDOW aggregate ('*') snapshots per context
-  //   sources: count of distinct non-aggregate source_ids per context
+  //   docs:   count of distinct source documents per context, derived from
+  //           `metadata->>'title'` — the only doc-identifying key present
+  //           in every context. `source_id` won't do here: CSV-backed
+  //           contexts (e.g. government_decisions, ethics_decisions) keep
+  //           one source_id for the whole CSV, even though each CSV row
+  //           is a separate document, so DISTINCT source_id collapses
+  //           thousands of docs to 1.
   const sql = `
     WITH recent AS (
       SELECT context, snapshot_at, doc_count,
@@ -34,16 +40,16 @@ async function getContextStats(bot, { pool = defaultPool() } = {}) {
       FROM context_snapshots
       WHERE bot = $1 AND source_id = '*'
     ),
-    sources AS (
-      SELECT context, count(DISTINCT source_id)::int AS src_count, max(snapshot_at) AS last_snap
-      FROM context_snapshots
-      WHERE bot = $1 AND source_id <> '*'
-      GROUP BY context
+    docs AS (
+      SELECT c.name AS context,
+             count(DISTINCT d.metadata->>'title')::int AS document_count
+      FROM contexts c JOIN documents d ON d.context_id = c.id
+      WHERE c.bot = $1 AND d.metadata ? 'title'
+      GROUP BY c.name
     )
     SELECT r.context, r.snapshot_at, r.doc_count, r.rn,
-           COALESCE(s.src_count, 0) AS source_count,
-           s.last_snap
-    FROM recent r LEFT JOIN sources s ON s.context = r.context
+           COALESCE(docs.document_count, 0) AS document_count
+    FROM recent r LEFT JOIN docs ON docs.context = r.context
     WHERE r.rn <= $2
     ORDER BY r.context, r.rn DESC
   `;
@@ -71,7 +77,7 @@ async function getContextStats(bot, { pool = defaultPool() } = {}) {
       prev_count: prev ? prev.doc_count : null,
       sparkline,
       last_synced_at: current.snapshot_at,
-      source_count: current.source_count,
+      document_count: current.document_count,
       drift_alert: prev ? current.doc_count < prev.doc_count : false,
     });
   }

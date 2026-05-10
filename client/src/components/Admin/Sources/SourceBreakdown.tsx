@@ -1,5 +1,6 @@
 import React from 'react';
 import { useAdminSourceQuery } from '~/data-provider';
+import { useLocalize } from '~/hooks';
 import Sparkline from './Sparkline';
 
 type Props = { context: string };
@@ -17,6 +18,7 @@ const externalLink = (sourceId: string): string | null => {
 const ROW_GRID = 'grid grid-cols-[1fr_90px_120px_70px_30px] items-center';
 
 const SourceBreakdown: React.FC<Props> = ({ context }) => {
+  const localize = useLocalize();
   const { data, isLoading, error } = useAdminSourceQuery(context, { enabled: true });
 
   if (isLoading) {
@@ -53,8 +55,8 @@ const SourceBreakdown: React.FC<Props> = ({ context }) => {
         }
       >
         <div>Source</div>
-        <div className="text-right">Docs</div>
-        <div>Trend</div>
+        <div className="text-right">{localize('com_admin_sources_col_chunks')}</div>
+        <div>{localize('com_admin_sources_col_trend')}</div>
         <div className="text-right">7d Δ</div>
         <div />
       </div>

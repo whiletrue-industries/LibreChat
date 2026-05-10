@@ -80,6 +80,7 @@
   "com_admin_prompts_usage_view_conversation": "צפה בשיחה",
   "com_admin_prompts_usage_window": "פעיל מ-{{start}} עד {{end}}",
   "com_admin_prompts_usage_window_current": "פעיל מ-{{start}} (נוכחי)",
+  "com_admin_sources_col_chunks": "מקטעים",
   "com_admin_sources_col_context": "הקשר",
   "com_admin_sources_col_docs": "מסמכים",
   "com_admin_sources_col_last_sync": "סנכרון אחרון",

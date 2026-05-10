@@ -498,7 +498,7 @@ export interface AdminSourcesContext {
   prev_count: number | null;
   sparkline: SparklinePoint[];
   last_synced_at: string;
-  source_count: number;
+  document_count: number;
   drift_alert: boolean;
 }
 
