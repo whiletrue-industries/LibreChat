@@ -518,3 +518,5 @@ export const adminSanity = (limit?: number): string =>
 
 export const adminSanityHtml = (runId: string): string =>
   `${BASE_URL}/api/admin/sanity/${runId}/html`;
+
+export const adminSanityLaunch = (): string => `${BASE_URL}/api/admin/sanity/launch`;

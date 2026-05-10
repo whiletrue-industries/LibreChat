@@ -1242,3 +1242,7 @@ export function getAdminSanityHtml(runId: string): Promise<string> {
   // caller wraps the response in a Blob URL.
   return request.get(endpoints.adminSanityHtml(runId), { responseType: 'text' });
 }
+
+export function launchAdminSanity(): Promise<{ ok: boolean; upstream: unknown }> {
+  return request.post(endpoints.adminSanityLaunch(), {});
+}
