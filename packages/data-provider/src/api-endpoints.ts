@@ -515,3 +515,6 @@ export const adminSource = (context: string): string =>
 /* --- Admin Sanity --- */
 export const adminSanity = (limit?: number): string =>
   `${BASE_URL}/api/admin/sanity${limit ? `?limit=${limit}` : ''}`;
+
+export const adminSanityHtml = (runId: string): string =>
+  `${BASE_URL}/api/admin/sanity/${runId}/html`;

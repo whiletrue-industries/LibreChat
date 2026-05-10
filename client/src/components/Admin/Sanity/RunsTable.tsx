@@ -1,7 +1,20 @@
 import React from 'react';
+import { dataService } from 'librechat-data-provider';
 import type { AdminSanityRunSummary } from 'librechat-data-provider';
 
 type Props = { runs: AdminSanityRunSummary[] };
+
+async function openRunHtml(id: string) {
+  // The HTML route requires JWT auth. window.open() can't carry the
+  // Bearer token (data-provider sets it in axios.defaults.headers.common,
+  // not in cookies), so fetch with auth via the data-provider then hand
+  // the response to a Blob URL the browser can navigate to.
+  const html = await dataService.getAdminSanityHtml(id);
+  const blob = new Blob([html], { type: 'text/html' });
+  const url = URL.createObjectURL(blob);
+  window.open(url, '_blank');
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
 
 function fmtDate(s: string) {
   return new Date(s).toLocaleString('en-IL', { dateStyle: 'short', timeStyle: 'short' });
@@ -53,7 +66,9 @@ export default function RunsTable({ runs }: Props) {
             key={r.id}
             role="row"
             aria-label={r.id}
-            onClick={() => window.open(`/api/admin/sanity/${r.id}/html`, '_blank')}
+            onClick={() => {
+              void openRunHtml(r.id);
+            }}
             className="cursor-pointer border-b hover:bg-gray-100 dark:hover:bg-gray-800"
           >
             <td className="py-2 px-3 font-mono text-xs">{fmtDate(r.started_at)}</td>

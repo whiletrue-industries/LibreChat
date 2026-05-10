@@ -1,5 +1,13 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import RunsTable from '../RunsTable';
+
+jest.mock('librechat-data-provider', () => ({
+  ...jest.requireActual('librechat-data-provider'),
+  dataService: {
+    getAdminSanityHtml: jest.fn(),
+  },
+}));
+const { dataService } = require('librechat-data-provider');
 
 const make = (over: Partial<any> = {}) => ({
   id: 'r1', env: 'staging', started_at: '2026-05-09T00:00:00Z',
@@ -10,7 +18,17 @@ const make = (over: Partial<any> = {}) => ({
   ...over,
 });
 
-beforeAll(() => { window.open = jest.fn(); });
+beforeAll(() => {
+  window.open = jest.fn();
+  // Polyfill for jsdom
+  (global as any).URL.createObjectURL = jest.fn(() => 'blob:test-url');
+  (global as any).URL.revokeObjectURL = jest.fn();
+});
+
+beforeEach(() => {
+  dataService.getAdminSanityHtml.mockReset();
+  (window.open as jest.Mock).mockReset();
+});
 
 describe('RunsTable', () => {
   it('renders empty state', () => {
@@ -35,10 +53,13 @@ describe('RunsTable', () => {
     expect(dot).toHaveAttribute('data-severity', 'red');
   });
 
-  it('clicking row opens HTML in new tab', () => {
+  it('clicking row fetches HTML with auth and opens it as a Blob URL', async () => {
+    dataService.getAdminSanityHtml.mockResolvedValueOnce('<!doctype html><p>row html</p>');
     render(<RunsTable runs={[make({ id: 'rid-7' })]} />);
     fireEvent.click(screen.getByRole('row', { name: /rid-7/i }));
-    expect(window.open).toHaveBeenCalledWith('/api/admin/sanity/rid-7/html', '_blank');
+    await waitFor(() => expect(dataService.getAdminSanityHtml).toHaveBeenCalled());
+    expect(dataService.getAdminSanityHtml).toHaveBeenCalledWith('rid-7');
+    expect(window.open).toHaveBeenCalledWith('blob:test-url', '_blank');
   });
 
   it('running row shows spinner status', () => {

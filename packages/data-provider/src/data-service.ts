@@ -1234,3 +1234,11 @@ export function getAdminSource(context: string): Promise<q.AdminSourceResponse> 
 export function getAdminSanity(limit?: number): Promise<q.AdminSanityRunsResponse> {
   return request.get(endpoints.adminSanity(limit));
 }
+
+export function getAdminSanityHtml(runId: string): Promise<string> {
+  // The route requires JWT auth via Authorization: Bearer header. The browser's
+  // plain navigation (window.open) can't carry the in-memory bearer token, so
+  // we fetch the HTML here (request.get attaches the auth header) and the
+  // caller wraps the response in a Blob URL.
+  return request.get(endpoints.adminSanityHtml(runId), { responseType: 'text' });
+}
