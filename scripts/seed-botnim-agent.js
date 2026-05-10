@@ -343,6 +343,53 @@ async function shareAgentWithGlobalProject(agentId) {
   );
 }
 
+// Grant PUBLIC viewer ACL on the canonical agent so any authenticated
+// LibreChat user can fetch the agent and start a chat — without this row
+// the modern `canAccessAgentResource` middleware returns 403 with
+// "Insufficient permissions to access this agent" even when the agent is
+// linked to the global `instance` project (the legacy share that
+// shareAgentWithGlobalProject above writes).
+//
+// Idempotent: PermissionService.grantPermission upserts the aclentries
+// row by (principalType, resourceType, resourceId, principalId).
+//
+// We deliberately do NOT grant PUBLIC on the draft mirror — restrictDraftAgent
+// middleware blocks non-admins server-side, and keeping the draft out of
+// PUBLIC keeps it out of regular users' accessible-resource list too.
+async function grantPublicViewerToAgent(agentId) {
+  const PermissionService = require('~/server/services/PermissionService');
+  const {
+    ResourceType,
+    PrincipalType,
+    AccessRoleIds,
+  } = require('librechat-data-provider');
+  const db = mongoose.connection.db;
+
+  const agent = await db.collection('agents').findOne({ id: agentId });
+  if (!agent) {
+    throw new Error(`agent ${agentId} not found in DB`);
+  }
+  // grantedBy is recorded for audit — agent.author is the seed admin user
+  // (the same account we logged in as above), which always exists.
+  const grantedBy = agent.author;
+  if (!grantedBy) {
+    throw new Error(`agent ${agentId} has no author — cannot record grantedBy`);
+  }
+  const entry = await PermissionService.grantPermission({
+    principalType: PrincipalType.PUBLIC,
+    principalId: null,
+    resourceType: ResourceType.AGENT,
+    resourceId: agent._id,
+    accessRoleId: AccessRoleIds.AGENT_VIEWER,
+    grantedBy,
+  });
+  console.log(
+    `[seed] PUBLIC viewer ACL on agent ${agentId} (resourceId=${agent._id}, role=agent_viewer)` +
+      (entry && entry._id ? `: entry=${entry._id}` : ': upserted'),
+  );
+  return entry;
+}
+
 // Upsert the "<canonical name> — DRAFT" mirror Agent doc. The mirror
 // shares provider/model/model_parameters/actions/tools with the canonical
 // agent; its `instructions` reflect the latest draft-or-active joined
@@ -435,6 +482,12 @@ async function main() {
       process.exitCode = 1;
     }
     try {
+      await grantPublicViewerToAgent(agent.id);
+    } catch (err) {
+      console.error(`[seed] grant public viewer FAILED: ${err.message}`);
+      process.exitCode = 1;
+    }
+    try {
       await ensureDraftAgentMirror();
     } catch (err) {
       console.error(`[seed] draft mirror FAILED: ${err.message}`);
@@ -448,11 +501,8 @@ async function main() {
 main()
   .then(() => {
     // Explicit exit so the process doesn't hang on open Mongoose / fetch
-    // keep-alive sockets after `[seed] done.`. Without this, ECS waits
-    // the full 10-min stop budget on a successful seed, blocking
-    // deploy.sh phase 9 (manifested 2026-05-10 as
-    // "Waiter TasksStopped failed: Max attempts exceeded" even though
-    // `[seed] done.` had been logged).
+    // keep-alive sockets after `[seed] done.`. Without this, ECS waits the
+    // full 10-min stop budget on a successful seed, blocking deploy.sh.
     // Exit code respects any process.exitCode set by partial failures
     // inside main() (e.g., draft mirror failure).
     process.exit(process.exitCode ?? 0);
