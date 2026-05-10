@@ -109,7 +109,7 @@ function RunHero({ run }: { run: AdminSanityRunSummary | undefined }) {
       <HeroTile
         label="Rubric"
         value={`${run.rubric_pass ?? 0} / ${run.rubric_fail ?? 0} / ${run.rubric_xfail ?? 0}`}
-        hint="PASS / FAIL / XFAIL (INFRA: " + (run.rubric_infra ?? 0) + ')'
+        hint={`PASS / FAIL / XFAIL (INFRA: ${run.rubric_infra ?? 0})`}
         tone={(run.rubric_fail ?? 0) === 0 ? 'good' : (run.rubric_fail ?? 0) <= 2 ? 'warn' : 'bad'}
       />
       <HeroTile
