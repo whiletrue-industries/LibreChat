@@ -47,7 +47,8 @@ const SourcesDashboard: React.FC = () => {
     );
   }
 
-  const totalDocs = contexts.reduce((acc, c) => acc + c.doc_count, 0);
+  const totalDocs = contexts.reduce((acc, c) => acc + c.document_count, 0);
+  const totalChunks = contexts.reduce((acc, c) => acc + c.doc_count, 0);
   const lastSync =
     contexts
       .map((c) => c.last_synced_at)
@@ -74,7 +75,7 @@ const SourcesDashboard: React.FC = () => {
         <StatCard
           label={localize('com_admin_sources_total_docs')}
           value={totalDocs.toLocaleString()}
-          sub={`${contexts.length} contexts`}
+          sub={`${totalChunks.toLocaleString()} ${localize('com_admin_sources_col_chunks').toLowerCase()} · ${contexts.length} contexts`}
         />
         <StatCard
           label={localize('com_admin_sources_last_sync')}
@@ -101,6 +102,9 @@ const SourcesDashboard: React.FC = () => {
               </th>
               <th className="px-4 py-2 text-right">
                 {localize('com_admin_sources_col_docs')}
+              </th>
+              <th className="px-4 py-2 text-right">
+                {localize('com_admin_sources_col_chunks')}
               </th>
               <th className="px-4 py-2 text-left">
                 {localize('com_admin_sources_col_trend')}

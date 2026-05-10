@@ -21,19 +21,20 @@ const wrap = (ui: React.ReactElement) =>
 
 const baseCtx = {
   context: 'legal_text',
-  doc_count: 488,
-  prev_count: 488,
-  sparkline: [{ at: 'a', count: 488 }, { at: 'b', count: 488 }],
+  doc_count: 985,
+  prev_count: 985,
+  sparkline: [{ at: 'a', count: 985 }, { at: 'b', count: 985 }],
   last_synced_at: '2026-04-27T12:00:00Z',
-  source_count: 8,
+  document_count: 488,
   drift_alert: false,
 };
 
 describe('SourceRow', () => {
-  it('renders the context name and doc count', () => {
+  it('renders the context name, document count, and chunk count', () => {
     wrap(<SourceRow ctx={baseCtx} />);
     expect(screen.getByText('legal_text')).toBeInTheDocument();
     expect(screen.getByText('488')).toBeInTheDocument();
+    expect(screen.getByText('985')).toBeInTheDocument();
   });
 
   it('shows a drift-alert prefix and red styling when drift_alert is true', () => {

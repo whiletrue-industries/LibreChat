@@ -33,6 +33,9 @@ const SourceRow: React.FC<Props> = ({ ctx }) => {
           {alert ? <span className="text-red-600 dark:text-red-400">⚠ </span> : null}
           <span className="font-semibold">{ctx.context}</span>
         </td>
+        <td className="px-4 py-2.5 text-right tabular-nums text-text-primary">
+          {ctx.document_count.toLocaleString()}
+        </td>
         <td
           className={
             'px-4 py-2.5 text-right tabular-nums ' +
@@ -53,7 +56,7 @@ const SourceRow: React.FC<Props> = ({ ctx }) => {
       </tr>
       {expanded && (
         <tr>
-          <td colSpan={5} className="p-0">
+          <td colSpan={6} className="p-0">
             <SourceBreakdown context={ctx.context} />
           </td>
         </tr>
