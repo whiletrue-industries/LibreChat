@@ -1,3 +1,4 @@
+require('../lib/tracing/init').initTracing();
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
@@ -145,6 +146,7 @@ const startServer = async () => {
   app.use('/api/admin/prompts', require('./routes/admin/prompts'));
   app.use('/api/admin/sources', require('./routes/admin/sources'));
   app.use('/api/admin/sanity', require('./routes/admin/sanity'));
+  app.use('/api/botnim', require('./routes/botnim'));
   app.use('/api/actions', routes.actions);
   app.use('/api/keys', routes.keys);
   app.use('/api/api-keys', routes.apiKeys);

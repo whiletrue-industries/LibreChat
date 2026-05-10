@@ -1,3 +1,4 @@
+const { trace } = require('@opentelemetry/api');
 const { logger } = require('@librechat/data-schemas');
 const { Constants, ViolationTypes } = require('librechat-data-provider');
 const {
@@ -238,7 +239,210 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           },
         };
 
-        const response = await client.sendMessage(text, messageOptions);
+        // Wrap the LLM call in an explicit chat.turn span so the trace_id
+        // capture below has a guaranteed active span (regardless of whether
+        // the upstream HttpInstrumentation has propagated context this far).
+        // We capture the trace_id INSIDE the span (before .end()) and close
+        // over it for the metadata write below.
+        //
+        // We also monkey-patch http.request/https.request for the duration
+        // of sendMessage so EVERY outbound HTTP call to /botnim/retrieve
+        // (which is how the agent invokes tools) becomes a guaranteed
+        // tool.call span — independent of whether @librechat/agents uses
+        // fetch / node-fetch / axios / etc. underneath. The patch is
+        // restored in a finally block; nothing leaks.
+        const _phxTracer = trace.getTracer('librechat.agent');
+        const _phxStartMs = Date.now();
+        let _phxTraceId = null;
+        const _phxRetrieveSpans = [];     // captured from http patch — for retrospection
+        const _phxRetrieveResponses = []; // captured /retrieve response bodies
+        const response = await _phxTracer.startActiveSpan('chat.turn', async (_phxSpan) => {
+          const _http = require('http');
+          const _https = require('https');
+          const _otelApi = require('@opentelemetry/api');
+          const _origHttpRequest = _http.request;
+          const _origHttpsRequest = _https.request;
+          const _origHttpGet = _http.get;
+          const _origHttpsGet = _https.get;
+
+          function _shouldInstrument(opts) {
+            try {
+              const path = (typeof opts === 'string')
+                ? new URL(opts).pathname
+                : (opts?.path || opts?.pathname || '');
+              return /\/botnim\/retrieve\//.test(path);
+            } catch { return false; }
+          }
+          function _toolNameFromPath(opts) {
+            try {
+              const path = (typeof opts === 'string')
+                ? new URL(opts).pathname
+                : (opts?.path || opts?.pathname || '');
+              const m = path.match(/\/botnim\/retrieve\/([^/?]+)\/([^/?]+)/);
+              return m ? `search_${m[1]}__${m[2]}` : 'search_unknown';
+            } catch { return 'search_unknown'; }
+          }
+          function _queryFromPath(opts) {
+            try {
+              const fullPath = (typeof opts === 'string')
+                ? new URL(opts).pathname + new URL(opts).search
+                : (opts?.path || '');
+              const m = fullPath.match(/[?&]query=([^&]+)/);
+              return m ? decodeURIComponent(m[1]) : '';
+            } catch { return ''; }
+          }
+
+          function _wrap(orig, isHttps) {
+            return function patched(opts, cb) {
+              if (!_shouldInstrument(opts)) {
+                return orig.apply(this, arguments);
+              }
+              const _toolName = _toolNameFromPath(opts);
+              const _query = _queryFromPath(opts);
+              const _ctx = _otelApi.context.active();
+              const _span = _phxTracer.startSpan('tool.call', {}, _ctx);
+              // Use setAttribute (not the constructor attributes option) — the
+              // SDK we ship sometimes drops construction-time attributes that
+              // aren't passed via the explicit setter.
+              _span.setAttribute('openinference.span.kind', 'TOOL');
+              _span.setAttribute('tool.name', _toolName);
+              _span.setAttribute('tool.parameters', JSON.stringify({ query: _query }));
+              _span.setAttribute(
+                'http.url',
+                (typeof opts === 'string')
+                  ? opts
+                  : `${isHttps ? 'https' : 'http'}://${opts.hostname || opts.host}${opts.path || ''}`,
+              );
+              _phxRetrieveSpans.push({ span: _span, toolName: _toolName, query: _query });
+
+              // Run the actual request inside the new span context so any
+              // child instrumentation also sees this as parent.
+              return _otelApi.context.with(_otelApi.trace.setSpan(_ctx, _span), () => {
+                const req = orig.call(this, opts, (res) => {
+                  let body = '';
+                  res.on('data', (chunk) => {
+                    if (body.length < 32 * 1024) body += chunk.toString();
+                  });
+                  res.on('end', () => {
+                    try {
+                      _span.setAttribute('http.status_code', res.statusCode || 0);
+                      const preview = body.slice(0, 8000);
+                      _span.setAttribute('tool.response.preview', preview);
+                      _phxRetrieveResponses.push({ toolName: _toolName, query: _query, body: preview });
+                      // Lightweight doc count for the pill summary
+                      const docMatches = preview.match(/^- /gm);
+                      if (docMatches) {
+                        _span.setAttribute('retrieval.documents.count', docMatches.length);
+                      }
+                    } finally {
+                      _span.end();
+                    }
+                  });
+                  res.on('error', () => _span.end());
+                  if (cb) cb(res);
+                });
+                req.on('error', (err) => {
+                  _span.recordException(err);
+                  _span.end();
+                });
+                return req;
+              });
+            };
+          }
+
+          _http.request = _wrap(_origHttpRequest, false);
+          _https.request = _wrap(_origHttpsRequest, true);
+          _http.get = _wrap(_origHttpGet, false);
+          _https.get = _wrap(_origHttpsGet, true);
+
+          try {
+            _phxSpan.setAttribute('conversation.id', String(reqConversationId || ''));
+            _phxSpan.setAttribute('agent.id', String(endpointOption?.agent?.id || ''));
+            _phxTraceId = _phxSpan.spanContext().traceId;
+            const r = await client.sendMessage(text, messageOptions);
+            // Restore http patches AS SOON AS sendMessage returns — before
+            // the retrospective emission so the spans below don't double-fire.
+            _http.request = _origHttpRequest;
+            _https.request = _origHttpsRequest;
+            _http.get = _origHttpGet;
+            _https.get = _origHttpsGet;
+
+            // ----------------------------------------------------------------
+            // Emit retrospective semantic spans so the AdminTracePanel can see:
+            //   • llm.completion  — one per LLM turn (token accounting)
+            //   • tool.call       — one per tool the LLM dispatched
+            //
+            // Data sources (available after sendMessage returns):
+            //   client.collectedUsage  — array of UsageMetadata per LLM turn
+            //   client.contentParts    — ordered content parts incl. tool_calls
+            //   client.model           — model name string
+            // ----------------------------------------------------------------
+            try {
+              const _agentModel =
+                client.model ||
+                endpointOption?.agent?.model_parameters?.model ||
+                'unknown';
+
+              // --- LLM completion spans (one per collected usage entry) ---
+              const _usages = Array.isArray(client.collectedUsage) ? client.collectedUsage : [];
+              if (_usages.length === 0) {
+                // Fallback: emit a single aggregated span using whatever token
+                // data the base client recorded on the response message.
+                const _llmSpan = _phxTracer.startSpan('llm.completion', {
+                  attributes: {
+                    'openinference.span.kind': 'LLM',
+                    'llm.model_name': _agentModel,
+                  },
+                });
+                _llmSpan.end();
+              } else {
+                _usages.forEach((_u, _i) => {
+                  const _prompt = _u?.prompt_tokens ?? _u?.input_tokens ?? _u?.inputTokens ?? 0;
+                  const _compl = _u?.completion_tokens ?? _u?.output_tokens ?? _u?.outputTokens ?? 0;
+                  const _llmSpan = _phxTracer.startSpan('llm.completion', {
+                    attributes: {
+                      'openinference.span.kind': 'LLM',
+                      'llm.model_name': _agentModel,
+                      'llm.token_count.prompt': _prompt,
+                      'llm.token_count.completion': _compl,
+                      'llm.token_count.total': _prompt + _compl,
+                      'llm.turn_index': _i,
+                    },
+                  });
+                  _llmSpan.end();
+                });
+              }
+
+              // Tool.call spans for each /botnim/retrieve are already emitted
+              // live by the http.request monkey-patch above (see _phxRetrieveSpans).
+              // We don't need a retrospective tool emission here because the
+              // patched request creates the span inline with the actual call,
+              // capturing real timing + response preview.
+              logger.info(
+                `[phoenix] turn complete: trace_id=${_phxTraceId} ` +
+                `llm_turns=${_usages.length} tool_calls=${_phxRetrieveSpans.length}`,
+              );
+            } catch (_phxEmitErr) {
+              logger.warn(
+                `[phoenix] error emitting semantic spans: ${_phxEmitErr?.message}`,
+              );
+            }
+
+            return r;
+          } finally {
+            // Belt + suspenders: restore http patches even if sendMessage threw.
+            _http.request = _origHttpRequest;
+            _https.request = _origHttpsRequest;
+            _http.get = _origHttpGet;
+            _https.get = _origHttpsGet;
+            // End any retrieve spans the http hook didn't get to close
+            // (e.g. if the response stream errored mid-flight).
+            for (const _entry of _phxRetrieveSpans) {
+              try { _entry.span.end(); } catch (_e) { /* already ended is fine */ }
+            }
+            _phxSpan.end();
+          }
+        });
 
         const messageId = response.messageId;
         const endpoint = endpointOption.endpoint;
@@ -275,6 +479,46 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           await saveMessage(req, userMessage, {
             context: 'api/server/controllers/agents/request.js - resumable user message',
           });
+        }
+
+        // Persist the chat.turn trace_id (captured inside the wrapper above)
+        // to message metadata for the phoenix admin panel. Mutate the in-flight
+        // `response` object so the downstream saveMessage call (if it fires)
+        // picks it up — AND fire a direct Mongo update so the trace_id lands
+        // even when the streaming flow already saved the message (in which case
+        // the `savedMessageIds.has(messageId)` guard below skips that save).
+        try {
+          if (_phxTraceId) {
+            // Tally docs read across all retrieve responses (lightweight: count
+            // top-level "- " bullets in YAML/text response previews).
+            let _docCount = 0;
+            for (const _resp of _phxRetrieveResponses) {
+              const _ms = (_resp.body || '').match(/^- /gm);
+              if (_ms) _docCount += _ms.length;
+            }
+            const meta = {
+              phoenix_trace_id: _phxTraceId,
+              phoenix_summary: {
+                totalMs: Date.now() - _phxStartMs,
+                toolCount: _phxRetrieveSpans.length,
+                docCount: _docCount,
+                citedCount: 0, // TODO: cited heuristic in a follow-up
+              },
+            };
+            response.metadata = { ...(response.metadata || {}), ...meta };
+            // Direct update — idempotent, only sets phoenix_* keys.
+            const { Message } = require('~/db/models');
+            Message.updateOne(
+              { messageId, user: userId },
+              { $set: { 'metadata.phoenix_trace_id': meta.phoenix_trace_id,
+                        'metadata.phoenix_summary': meta.phoenix_summary } },
+            ).catch((e) => logger.warn(`[phoenix] direct metadata update failed: ${e.message}`));
+            logger.info(`[phoenix] captured trace_id=${_phxTraceId} for messageId=${messageId}`);
+          } else {
+            logger.warn('[phoenix] no trace_id captured — chat.turn span did not produce one');
+          }
+        } catch (_traceErr) {
+          logger.warn(`[phoenix] capture path errored: ${_traceErr?.message}`);
         }
 
         // CRITICAL: Save response message BEFORE emitting final event.

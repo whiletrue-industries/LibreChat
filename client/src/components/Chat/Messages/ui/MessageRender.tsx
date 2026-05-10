@@ -5,6 +5,7 @@ import type { TMessage } from 'librechat-data-provider';
 import type { TMessageProps, TMessageIcon } from '~/common';
 import { cn, getHeaderPrefixForScreenReader, getMessageAriaLabel } from '~/utils';
 import MessageContent from '~/components/Chat/Messages/Content/MessageContent';
+import { AdminTracePanel } from '~/components/Admin/TracePanel/AdminTracePanel';
 import { useLocalize, useMessageActions, useContentMetadata } from '~/hooks';
 import PlaceholderRow from '~/components/Chat/Messages/ui/PlaceholderRow';
 import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
@@ -172,6 +173,8 @@ const MessageRender = memo(function MessageRender({
                 setSiblingIdx={setSiblingIdx ?? (() => ({}))}
               />
             </MessageContext.Provider>
+            {/* Admin-only LLM trace pill — renders null for non-admins and messages without a trace id */}
+            {!msg.isCreatedByUser && <AdminTracePanel message={msg} />}
           </div>
           {hasNoChildren && effectiveIsSubmitting ? (
             <PlaceholderRow />

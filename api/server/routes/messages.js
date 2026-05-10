@@ -369,6 +369,18 @@ router.get('/:conversationId', validateMessageReq, async (req, res) => {
   try {
     const { conversationId } = req.params;
     const messages = await getMessages({ conversationId }, '-_id -__v -user');
+    // Strip phoenix_* metadata for non-admin users (admin-only tracing data).
+    if (req.user?.role !== SystemRoles.ADMIN && Array.isArray(messages)) {
+      for (const msg of messages) {
+        if (msg?.metadata && typeof msg.metadata === 'object') {
+          for (const k of Object.keys(msg.metadata)) {
+            if (k.startsWith('phoenix_')) {
+              delete msg.metadata[k];
+            }
+          }
+        }
+      }
+    }
     res.status(200).json(messages);
   } catch (error) {
     logger.error('Error fetching messages:', error);
@@ -401,6 +413,19 @@ router.get('/:conversationId/:messageId', validateMessageReq, async (req, res) =
     const message = await getMessages({ conversationId, messageId }, '-_id -__v -user');
     if (!message) {
       return res.status(404).json({ error: 'Message not found' });
+    }
+    // Strip phoenix_* metadata fields for non-admin users (admin-only tracing data)
+    const msgs = Array.isArray(message) ? message : [message];
+    if (req.user?.role !== SystemRoles.ADMIN) {
+      for (const msg of msgs) {
+        if (msg?.metadata && typeof msg.metadata === 'object') {
+          for (const k of Object.keys(msg.metadata)) {
+            if (k.startsWith('phoenix_')) {
+              delete msg.metadata[k];
+            }
+          }
+        }
+      }
     }
     res.status(200).json(message);
   } catch (error) {

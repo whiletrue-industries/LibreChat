@@ -11,6 +11,7 @@ import { fontSizeAtom } from '~/store/fontSize';
 import SiblingSwitch from './SiblingSwitch';
 import MultiMessage from './MultiMessage';
 import HoverButtons from './HoverButtons';
+import { AdminTracePanel } from '~/components/Admin/TracePanel/AdminTracePanel';
 import SubRow from './SubRow';
 import store from '~/store';
 
@@ -175,6 +176,7 @@ export default function Message(props: TMessageProps) {
                     />
                   </SubRow>
                 )}
+                {!message.isCreatedByUser && <AdminTracePanel message={message} />}
               </div>
             </div>
           </div>
