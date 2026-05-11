@@ -81,6 +81,30 @@ describe('getContextStats', () => {
     const stats = await getContextStats('unified', { pool });
     expect(stats).toEqual([]);
   });
+
+  it('counts distinct source_doc when present (fan-out contexts)', async () => {
+    await pool.query(
+      `INSERT INTO context_snapshots (snapshot_at, bot, context, source_id, doc_count)
+       VALUES (now(), 'unified', 'knesset_protocols', '*', 27098)`);
+    const { rows } = await pool.query(
+      "INSERT INTO contexts (bot, name) VALUES ('unified', 'knesset_protocols') RETURNING id");
+    const ctxId = rows[0].id;
+    // 5 chunks across 2 source docs — title is per-chunk (would over-count),
+    // source_doc identifies the upstream .doc file.
+    await pool.query(
+      `INSERT INTO documents (context_id, metadata)
+       VALUES
+         ($1, jsonb_build_object('title', 'turn_1.md', 'source_doc', 'a.doc')),
+         ($1, jsonb_build_object('title', 'turn_2.md', 'source_doc', 'a.doc')),
+         ($1, jsonb_build_object('title', 'turn_3.md', 'source_doc', 'a.doc')),
+         ($1, jsonb_build_object('title', 'turn_4.md', 'source_doc', 'b.doc')),
+         ($1, jsonb_build_object('title', 'turn_5.md', 'source_doc', 'b.doc'))`,
+      [ctxId]);
+
+    const stats = await getContextStats('unified', { pool });
+    const prot = stats.find((s) => s.context === 'knesset_protocols');
+    expect(prot.document_count).toBe(2);  // distinct source_doc, NOT 5 (chunks) or 5 (titles)
+  });
 });
 
 describe('getSourceStats', () => {

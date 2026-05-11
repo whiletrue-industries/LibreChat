@@ -26,13 +26,19 @@ const SPARKLINE_WINDOW = 30;  // last N snapshots per spec Q5=a
 async function getContextStats(bot, { pool = defaultPool() } = {}) {
   // Single round trip via two CTEs:
   //   recent: last SPARKLINE_WINDOW aggregate ('*') snapshots per context
-  //   docs:   count of distinct source documents per context, derived from
-  //           `metadata->>'title'` — the only doc-identifying key present
-  //           in every context. `source_id` won't do here: CSV-backed
-  //           contexts (e.g. government_decisions, ethics_decisions) keep
-  //           one source_id for the whole CSV, even though each CSV row
-  //           is a separate document, so DISTINCT source_id collapses
-  //           thousands of docs to 1.
+  //   docs:   count of distinct source documents per context. Prefer
+  //           `metadata->>'source_doc'` when present (written by the
+  //           rebuilding-bots collect_sources pipeline for CSV-row
+  //           contexts that fan one upstream document out into many
+  //           chunks — knesset_protocols speaker turns, plenary_schedule
+  //           (session, item) pairs). Without source_doc those contexts
+  //           would over-count by 10-300x because each chunk has its own
+  //           unique `title`. Fall back to `title` for everyone else
+  //           (legal_text, government_decisions, etc. — each row IS the
+  //           source doc there, so DISTINCT title is correct).
+  //           `source_id` is unusable: CSV-backed contexts keep ONE
+  //           source_id for the whole CSV, collapsing thousands of docs
+  //           to 1.
   const sql = `
     WITH recent AS (
       SELECT context, snapshot_at, doc_count,
@@ -42,9 +48,9 @@ async function getContextStats(bot, { pool = defaultPool() } = {}) {
     ),
     docs AS (
       SELECT c.name AS context,
-             count(DISTINCT d.metadata->>'title')::int AS document_count
+             count(DISTINCT COALESCE(d.metadata->>'source_doc', d.metadata->>'title'))::int AS document_count
       FROM contexts c JOIN documents d ON d.context_id = c.id
-      WHERE c.bot = $1 AND d.metadata ? 'title'
+      WHERE c.bot = $1 AND (d.metadata ? 'source_doc' OR d.metadata ? 'title')
       GROUP BY c.name
     )
     SELECT r.context, r.snapshot_at, r.doc_count, r.rn,
