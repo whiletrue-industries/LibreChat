@@ -134,6 +134,19 @@ module "librechat_api" {
     # docs, which is wrong for the בוט-נים deployment. Closes Monday
     # item 2881679817.
     HELP_AND_FAQ_URL = "/"
+
+    # Phoenix LLM-tracing wiring (in-cluster Service Connect DNS).
+    # _COLLECTOR_ENDPOINT enables api/lib/tracing/init.js to export OTel
+    # spans (chat.turn root + per-tool semantic spans + per-request
+    # express spans) to Phoenix. _GRAPHQL_ENDPOINT is consumed by
+    # api/server/routes/botnim/traces.js so the admin trace-fetch route
+    # can query Phoenix for the spans by trace_id. Both default to
+    # phoenix:6006 in the route code; setting them explicitly here makes
+    # the wiring discoverable via the task def. Phoenix itself is
+    # provisioned by the new infra/live/staging/phoenix/ stack — no
+    # public surface, Service Connect ingress only.
+    PHOENIX_COLLECTOR_ENDPOINT = "http://phoenix:6006/v1/traces"
+    PHOENIX_GRAPHQL_ENDPOINT   = "http://phoenix:6006/graphql"
   }
 
   secret_environment_variables = merge(
