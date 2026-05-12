@@ -248,6 +248,19 @@ function parseSpecServerUrl(rawSpec) {
   return url;
 }
 
+// temperature=0 + a fixed seed produces deterministic completions on
+// supported OpenAI models. The bot is a factual-retrieval Q&A agent
+// (legal text + budget data), so creative variability is undesirable —
+// re-asking the same question should give the same routing and same
+// answer. Without this, agent.model_parameters was empty and OpenAI's
+// default temperature (1.0) caused observed run-to-run divergence in
+// tool selection (e.g. plenary_schedule vs DatasetDBQuery on the same
+// "מתי היה הדיון האחרון על תקציב 2026?" prompt across 3 runs).
+const DETERMINISTIC_MODEL_PARAMETERS = {
+  temperature: 0,
+  seed: 1,
+};
+
 async function ensureAgent(token, existing) {
   const instructions = await instructionsText();
   if (existing) {
@@ -259,6 +272,7 @@ async function ensureAgent(token, existing) {
         instructions,
         model: MODEL,
         provider: 'openAI',
+        model_parameters: DETERMINISTIC_MODEL_PARAMETERS,
       },
     });
     return updated;
@@ -271,6 +285,7 @@ async function ensureAgent(token, existing) {
       provider: 'openAI',
       model: MODEL,
       instructions,
+      model_parameters: DETERMINISTIC_MODEL_PARAMETERS,
       description:
         'עונה על שאלות מתוך תקנון הכנסת וחוקים נלווים וכן על שאלות בנושאי תקציב',
     },
