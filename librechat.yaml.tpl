@@ -75,6 +75,25 @@ actions:
     - api.stack-ai.com
 
 endpoints:
+  # `all` applies title-generation settings regardless of which provider
+  # the agent uses under the hood. The agents endpoint's title path
+  # (api/server/controllers/agents/client.js:#titleConvo) reads
+  # appConfig.endpoints.all FIRST, then falls back to
+  # appConfig.endpoints[agent.endpoint] (e.g. openAI). Putting the
+  # override here covers the unified bot regardless of its provider.
+  all:
+    # Force conversation titles to Hebrew. The upstream default in
+    # @librechat/agents (utils/title.mjs:86) tells the LLM to use
+    # "title case conventions" with no language guidance, which biases
+    # toward English/mixed output. {convo} is the LangChain template
+    # placeholder the framework injects before invocation.
+    titlePrompt: |
+      ספק כותרת תמציתית של עד 5 מילים לשיחה הבאה.
+      הכותרת חייבת להיות בעברית בלבד, גם אם השיחה בשפה אחרת או מעורבת.
+      אל תשתמש בסימני פיסוק או במירכאות. החזר רק את הכותרת עצמה.
+
+      שיחה:
+      {convo}
   agents:
     # Allow deep tool chains; the unified bot can call 10+ retrieve
     # tools before reaching an answer.
