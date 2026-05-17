@@ -405,6 +405,59 @@ async function grantPublicViewerToAgent(agentId) {
   return entry;
 }
 
+// Grant ADMIN-role owner ACL on the draft mirror so admins actually see it.
+//
+// Without this row, the draft agent has zero aclentries and `/api/agents`
+// hides it from everyone — including the admin user. The agentsMap on the
+// frontend then doesn't contain the draft's id, ModelSelectorContext
+// filters the draft modelSpec out of the dropdown (see
+// `client/src/components/Chat/Menus/Endpoints/ModelSelectorContext.tsx`
+// — the filter that keeps only specs whose `agent_id in agentsMap`), and
+// the "Try draft" button opens a chat with no selectable agent and a
+// disabled input. Found 2026-05-17 — staging and prod both had aclCount=0.
+//
+// We use a ROLE-typed grant against `SystemRoles.ADMIN` so:
+//   - any current admin user gets access (their role principal matches)
+//   - any future admin user auto-gets access without a re-seed
+//   - the entry remains scoped to admins — non-admins never match this
+//     row (their role principal is USER) and `restrictDraftAgent`
+//     middleware still 403s them as a second layer of defense
+//
+// Idempotent: PermissionService.grantPermission upserts the aclentries
+// row by (principalType, resourceType, resourceId, principalId).
+async function grantAdminOwnerToDraftAgent(agentId) {
+  const PermissionService = require('~/server/services/PermissionService');
+  const {
+    ResourceType,
+    PrincipalType,
+    AccessRoleIds,
+    SystemRoles,
+  } = require('librechat-data-provider');
+  const db = mongoose.connection.db;
+
+  const agent = await db.collection('agents').findOne({ id: agentId });
+  if (!agent) {
+    throw new Error(`draft agent ${agentId} not found in DB`);
+  }
+  const grantedBy = agent.author;
+  if (!grantedBy) {
+    throw new Error(`draft agent ${agentId} has no author — cannot record grantedBy`);
+  }
+  const entry = await PermissionService.grantPermission({
+    principalType: PrincipalType.ROLE,
+    principalId: SystemRoles.ADMIN,
+    resourceType: ResourceType.AGENT,
+    resourceId: agent._id,
+    accessRoleId: AccessRoleIds.AGENT_OWNER,
+    grantedBy,
+  });
+  console.log(
+    `[seed] ADMIN role owner ACL on draft ${agentId} (resourceId=${agent._id}, role=agent_owner)` +
+      (entry && entry._id ? `: entry=${entry._id}` : ': upserted'),
+  );
+  return entry;
+}
+
 // Upsert the "<canonical name> — DRAFT" mirror Agent doc. The mirror
 // shares provider/model/model_parameters/actions/tools with the canonical
 // agent; its `instructions` reflect the latest draft-or-active joined
@@ -425,6 +478,7 @@ async function ensureDraftAgentMirror() {
     `[seed] draft mirror: id=${draft.id} name="${draft.name}" ` +
       `tools=${(draft.tools || []).length}`,
   );
+  await grantAdminOwnerToDraftAgent(draft.id);
 }
 
 async function withMongoConnection(fn) {
